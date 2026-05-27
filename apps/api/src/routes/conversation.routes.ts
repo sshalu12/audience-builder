@@ -13,6 +13,13 @@ import { HttpError } from "../utils/httpError.js";
 
 export const conversationRouter = Router();
 
+function paramString(value: string | string[] | undefined): string {
+  if (value === undefined) {
+    return "";
+  }
+  return Array.isArray(value) ? (value[0] ?? "") : value;
+}
+
 conversationRouter.use(requireAuth);
 
 async function assertConversationAccess(conversationId: string, user: { id: string; role: Role }) {
@@ -77,8 +84,9 @@ conversationRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
-    const conversation = await loadConversation(req.params.id);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
+    const conversation = await loadConversation(conversationId);
     res.json({ conversation });
   })
 );
@@ -87,7 +95,8 @@ conversationRouter.post(
   "/:id/messages",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
 
     const content = String((req.body as { content?: string }).content ?? "").trim();
     if (!content) {
@@ -96,14 +105,14 @@ conversationRouter.post(
 
     await prisma.message.create({
       data: {
-        conversationId: req.params.id,
+        conversationId,
         role: MessageRole.USER,
         content,
       },
     });
 
-    await handlePlannerMessage(req.params.id, content);
-    const conversation = await loadConversation(req.params.id);
+    await handlePlannerMessage(conversationId, content);
+    const conversation = await loadConversation(conversationId);
     res.json({ conversation });
   })
 );
@@ -112,9 +121,10 @@ conversationRouter.post(
   "/:id/approve",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
-    const estimate = await approveAudiencePlan(req.params.id, true);
-    const conversation = await loadConversation(req.params.id);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
+    const estimate = await approveAudiencePlan(conversationId, true);
+    const conversation = await loadConversation(conversationId);
     res.json({ estimate, conversation });
   })
 );
@@ -123,9 +133,10 @@ conversationRouter.post(
   "/:id/estimate",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
-    const estimate = await approveAudiencePlan(req.params.id, false);
-    const conversation = await loadConversation(req.params.id);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
+    const estimate = await approveAudiencePlan(conversationId, false);
+    const conversation = await loadConversation(conversationId);
     res.json({ estimate, conversation });
   })
 );
@@ -134,15 +145,16 @@ conversationRouter.post(
   "/:id/signals/remove",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
     const { signalId } = req.body as { signalId?: string };
 
     if (!signalId) {
       throw new HttpError(400, "signalId is required");
     }
 
-    await removeSignalFromPlan(req.params.id, signalId);
-    const conversation = await loadConversation(req.params.id);
+    await removeSignalFromPlan(conversationId, signalId);
+    const conversation = await loadConversation(conversationId);
     res.json({ conversation });
   })
 );
@@ -151,15 +163,16 @@ conversationRouter.post(
   "/:id/signals/add",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    await assertConversationAccess(req.params.id, user);
+    const conversationId = paramString(req.params.id);
+    await assertConversationAccess(conversationId, user);
     const { signalId } = req.body as { signalId?: string };
 
     if (!signalId) {
       throw new HttpError(400, "signalId is required");
     }
 
-    await addSignalToPlan(req.params.id, signalId);
-    const conversation = await loadConversation(req.params.id);
+    await addSignalToPlan(conversationId, signalId);
+    const conversation = await loadConversation(conversationId);
     res.json({ conversation });
   })
 );

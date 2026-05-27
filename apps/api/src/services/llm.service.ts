@@ -20,7 +20,7 @@ type ChatMessage = {
 
 type GenerateJsonInput<T> = {
   label?: string;
-  schema?: z.ZodType<T>;
+  schema?: z.ZodTypeAny;
   fallback?: T;
   messages?: ChatMessage[];
 };

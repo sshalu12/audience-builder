@@ -2,6 +2,7 @@ import {
   AudienceStatus,
   ConversationStatus,
   MessageRole,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "../db.js";
 import { HttpError } from "../utils/httpError.js";
@@ -294,8 +295,15 @@ function fallbackIntentFromMessage(message: string): AudienceIntent {
     clarificationNeeded: message.trim().split(/\s+/).length < 3,
     clarificationQuestion:
       message.trim().split(/\s+/).length < 3
-        ? "Can you add more detail about the behaviors, locations, purchases, or demographics you want to target?"
-        : null,
+      ? "Can you add more detail about the behaviors, locations, purchases, or demographics you want to target?"
+      : null,
+    searchKeywords: [
+      ...interests,
+      ...behaviors,
+      ...locations,
+      ...transactions,
+    ],
+    requestedSignalCount: null,
   };
 }
 
@@ -489,13 +497,15 @@ Critical rules:
     candidatePayload.map((candidate) => [candidate.id, candidate]),
   );
 
-  const safeSignals = recommendation.recommendedSignals
+  const resolved = recommendation ?? fallback;
+
+  const safeSignals = resolved.recommendedSignals
     .filter((signal) => candidateById.has(signal.id))
     .filter((signal) => !isSensitiveText(`${signal.name} ${signal.path ?? ""}`))
     .slice(0, maxSignals);
 
   return {
-    ...recommendation,
+    ...resolved,
     recommendedSignals:
       safeSignals.length > 0
         ? safeSignals
@@ -578,8 +588,8 @@ function formatRefinedRecommendationMessage({
 }
 
 function formatAllSelectedSignalsMessage(plan: {
-  audienceName: string;
-  summary: string;
+  audienceName: string | null;
+  summary: string | null;
   selectedSignals: unknown;
   estimatedMin: number | null;
   estimatedMax: number | null;
@@ -1037,7 +1047,7 @@ async function removePendingLowConfidenceSignals({
       estimatedMin: null,
       estimatedMax: null,
       confidence: null,
-      estimate: null,
+      estimate: Prisma.JsonNull,
     },
   });
 
@@ -1115,7 +1125,7 @@ export async function removeSignalFromPlan(
       estimatedMin: null,
       estimatedMax: null,
       confidence: null,
-      estimate: null,
+      estimate: Prisma.JsonNull,
     },
   });
 
@@ -1167,7 +1177,7 @@ export async function addSignalToPlan(
       estimatedMin: null,
       estimatedMax: null,
       confidence: null,
-      estimate: null,
+      estimate: Prisma.JsonNull,
     },
   });
 
@@ -1212,7 +1222,7 @@ async function removeSignalByText(conversationId: string, term: string) {
       estimatedMin: null,
       estimatedMax: null,
       confidence: null,
-      estimate: null,
+      estimate: Prisma.JsonNull,
     },
   });
 
@@ -1323,14 +1333,15 @@ export async function handlePlannerMessage(
     return;
   }
 
-  const decision = await decideNextAgentAction({
+  const decision =
+  (await decideNextAgentAction({
     message,
     existingPlan,
     history: conversation.messages.map((item) => ({
       role: item.role,
       content: item.content,
     })),
-  });
+  })) ?? fallbackAgentDecision(message, Boolean(existingPlan));
 
   if (
     decision.action === "GENERAL_REPLY" ||
@@ -1418,9 +1429,9 @@ export async function handlePlannerMessage(
       .join("\n");
   }
 
-  const intent = await extractAudienceIntent(audienceRequest);
-  const requestedCount =
-  intent.requestedSignalCount ?? requestedAdditionalSignalCount(message) ?? 8;
+  const intent =
+    (await extractAudienceIntent(audienceRequest)) ??
+    fallbackIntentFromMessage(audienceRequest);
 
   const keywords = [
     ...keywordsFromIntent(intent, audienceRequest),
@@ -1461,7 +1472,7 @@ export async function handlePlannerMessage(
     removeTerms,
   });
 
-  const finalRecommendation = {
+  const finalRecommendation: AudienceRecommendation = {
     ...recommendation,
     recommendedSignals:
       recommendedSignalsAfterRemoveTerms.length > 0
@@ -1532,7 +1543,7 @@ export async function handlePlannerMessage(
       estimatedMin: null,
       estimatedMax: null,
       confidence: null,
-      estimate: null,
+      estimate: Prisma.JsonNull,
     },
   });
 
