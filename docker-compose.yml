@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: audience-builder-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: audience_builder
+      POSTGRES_PASSWORD: audience_builder
+      POSTGRES_DB: audience_builder
+    ports:
+      - "5432:5432"
+    volumes:
+      - audience-builder-postgres:/var/lib/postgresql/data
+
+volumes:
+  audience-builder-postgres:

@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PLANNER
+}
+
+enum ConversationStatus {
+  DRAFT
+  APPROVED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum AudienceStatus {
+  DRAFT
+  APPROVED
+}
+
+enum SignalSource {
+  LOCATION
+  TRANSACTION
+  CONSUMER_GRAPH_FIELD
+  CONSUMER_GRAPH_VALUE
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String?
+  passwordHash  String
+  role          Role           @default(PLANNER)
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Conversation {
+  id           String             @id @default(uuid())
+  title        String?
+  status       ConversationStatus @default(DRAFT)
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  audiencePlan AudiencePlan?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([role])
+}
+
+model AudiencePlan {
+  id             String         @id @default(uuid())
+  conversationId String         @unique
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  brief          String
+  audienceName   String?
+  summary        String?
+  intent         Json?
+  selectedSignals Json          @default("[]")
+  estimatedMin   Int?
+  estimatedMax   Int?
+  confidence     Float?
+  estimate       Json?
+  status         AudienceStatus @default(DRAFT)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model TaxonomySignal {
+  id          String       @id @default(uuid())
+  source      SignalSource
+  externalId  String?
+  name        String
+  description String?
+  path        String?
+  level1      String?
+  level2      String?
+  level3      String?
+  level4      String?
+  fieldName   String?
+  fieldValue  String?
+  raw         Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([source])
+  @@index([name])
+  @@index([fieldName])
+}

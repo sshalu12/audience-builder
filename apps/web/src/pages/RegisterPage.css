@@ -1,0 +1,118 @@
+/* RegisterPage.css */
+
+.auth-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background-color: #f8fafc; /* Ultra-light clean gray */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 20px;
+  }
+  
+  .auth-card {
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); /* Soft modern shadow */
+    width: 100%;
+    max-width: 440px;
+    box-sizing: border-box;
+  }
+  
+  .auth-card h1 {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: #0f172a; /* Slate 900 */
+  }
+  
+  .auth-card p {
+    margin: 0 0 28px 0;
+    color: #64748b; /* Slate 500 */
+    font-size: 15px;
+  }
+  
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .auth-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155; /* Slate 700 */
+  }
+  
+  .auth-form input {
+    padding: 12px 14px;
+    font-size: 15px;
+    border: 1px solid #cbd5e1; /* Slate 300 */
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #0f172a;
+    outline: none;
+    transition: all 0.2s ease-in-out;
+  }
+  
+  /* Smooth glow effect when user clicks into an input field */
+  .auth-form input:focus {
+    border-color: #6366f1; /* Modern Indigo */
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  }
+  
+  .auth-form input::placeholder {
+    color: #94a3b8;
+  }
+  
+  .error-box {
+    background-color: #fef2f2; /* Light red */
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  
+  .auth-form button {
+    margin-top: 8px;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: #6366f1; /* Modern Indigo */
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  
+  .auth-form button:hover:not(:disabled) {
+    background-color: #4f46e5; /* Darker Indigo on hover */
+  }
+  
+  .auth-form button:disabled {
+    background-color: #a5b4fc;
+    cursor: not-allowed;
+  }
+  
+  .auth-switch {
+    text-align: center;
+    margin-top: 24px !important;
+    font-size: 14px !important;
+  }
+  
+  .auth-switch a {
+    color: #6366f1;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  
+  .auth-switch a:hover {
+    text-decoration: underline;
+  }

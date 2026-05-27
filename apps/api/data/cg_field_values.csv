@@ -1,0 +1,691 @@
+Field Name,Field Value,Field Value Description
+gender,m,Male
+gender,f,Female
+language,a1,Afrikaans
+language,a2,Albanian
+language,a3,Amharic
+language,a4,Arabic
+language,a5,Armenian
+language,a6,Ashanti
+language,a7,Azeri
+language,b1,Bantu
+language,b2,Basque
+language,b3,Bengali
+language,b4,Bulgarian
+language,b5,Burmese
+language,c1,"Chinese (Mandarin, Cantonese and other dialects)"
+language,c3,Czech
+language,d1,Danish
+language,d2,Dutch
+language,d3,Dzongha
+language,e1,English
+language,e2,Estonian
+language,f1,Farsi
+language,f2,Finnish
+language,f3,French
+language,g1,Georgian
+language,g2,German
+language,g3,Ga
+language,g4,Greek
+language,h2,Hebrew
+language,h3,Hindi
+language,h4,Hungarian
+language,i1,Icelandic
+language,i2,Indonesian
+language,i3,Italian
+language,j1,Japanese
+language,k1,Kazakh
+language,k2,Khmer
+language,k3,Kirghiz
+language,k4,Korean
+language,l1,Laotian (Include Hmong)
+language,l2,Latvian
+language,l3,Lithuanian
+language,m1,Macedonian
+language,m2,Malagasy
+language,m3,Malay
+language,m4,Moldavian
+language,m5,Mongolian
+language,n1,Nepali
+language,n2,Norwegian
+language,o1,Oromo
+language,p1,Pashto
+language,p2,Polish
+language,p3,Portuguese
+language,r1,Romanian
+language,r2,Russian
+language,s1,Samoan
+language,s2,Serbo-Croatian
+language,s3,Sinhalese
+language,s4,Slovakian
+language,s5,Slovenian
+language,s6,Somali
+language,s7,Sotho
+language,s8,Spanish
+language,s9,Swahili
+language,sa,Swazi
+language,sb,Swedish
+language,t1,Tagalog
+language,t2,Tajik
+language,t3,Thai
+language,t4,Tibetan
+language,t5,Tongan
+language,t6,Turkish
+language,t7,Turkmeni
+language,t8,Tswana
+language,u1,Urdu
+language,u2,Uzbecki
+language,ux,Uzbeki
+language,v1,Vietnamese
+language,x1,Xhosa
+language,z1,Zulu
+religion,b,Buddhist
+religion,c,Catholic
+religion,g,Greek Orthodox
+religion,h,Hindu
+religion,i,Islamic
+religion,j,Jewish
+religion,k,Sikh
+religion,l,Lutheran
+religion,m,Mormon
+religion,o,Eastern Orthodox
+religion,p,Protestant
+religion,s,Shinto
+religion,x,Not Known or Unmatched
+ethnic_group,a,Southeast Asian
+ethnic_group,c,Central & Southwest Asian
+ethnic_group,e,Eastern European
+ethnic_group,f,All African American Ethnic Groups
+ethnic_group,i,Middle Eastern
+ethnic_group,j,Jewish
+ethnic_group,m,Mediterranean
+ethnic_group,n,Native American
+ethnic_group,o,Far Eastern
+ethnic_group,p,Polynesian
+ethnic_group,s,Scandinavian
+ethnic_group,t,Other
+ethnic_group,w,Western European
+ethnic_group,y,Hispanic
+ethnic_language,a,Assimilated - English Speaking
+ethnic_language,b,Bilingual - English Primary
+ethnic_language,c,Bilingual - Native Language Primary
+ethnic_language,d,Unassimilated - Native Language Only
+ethnic_hispanic_country,ha,Argentina
+ethnic_hispanic_country,hb,Bolivia
+ethnic_hispanic_country,hc,Cuba
+ethnic_hispanic_country,hd,Dominican Republic
+ethnic_hispanic_country,he,El Salvador
+ethnic_hispanic_country,hg,Guatemala
+ethnic_hispanic_country,hh,Honduras
+ethnic_hispanic_country,hj,Colombia
+ethnic_hispanic_country,hk,Panama
+ethnic_hispanic_country,hl,Ecuador
+ethnic_hispanic_country,hm,Mexico
+ethnic_hispanic_country,hn,Nicaragua
+ethnic_hispanic_country,hp,Puerto Rico
+ethnic_hispanic_country,hq,Chile
+ethnic_hispanic_country,hr,Costa Rica
+ethnic_hispanic_country,hs,Spain
+ethnic_hispanic_country,hu,Uruguay
+ethnic_hispanic_country,hv,Venezuela
+ethnic_hispanic_country,hx,Peru
+ethnic_hispanic_country,hy,Paraguay
+ethnic_hispanic_country,hz,Brazil
+ethnic_origin,0,Unknown
+ethnic_origin,c1,Afghani
+ethnic_origin,c2,Bengladesh
+ethnic_origin,c3,Indian
+ethnic_origin,c4,Pakistani
+ethnic_origin,c5,Sri Lankan
+ethnic_origin,c6,Nepal
+ethnic_origin,c7,Telugan
+ethnic_origin,d0,Algerian
+ethnic_origin,d1,Arab
+ethnic_origin,d3,Egyptian
+ethnic_origin,d4,Greek
+ethnic_origin,d5,Iraqi
+ethnic_origin,d6,Kurdish
+ethnic_origin,d7,Jewish
+ethnic_origin,d8,Kuwaiti
+ethnic_origin,d9,Libyan
+ethnic_origin,de,Macedonian
+ethnic_origin,df,Moroccan
+ethnic_origin,dg,Qatar
+ethnic_origin,dh,Persian
+ethnic_origin,dj,Saudi
+ethnic_origin,dk,Syrian
+ethnic_origin,dl,Tunisian
+ethnic_origin,dm,Turkish
+ethnic_origin,dn,Yemeni
+ethnic_origin,dq,N/A
+ethnic_origin,dr,N/A
+ethnic_origin,ds,Maltese
+ethnic_origin,ks,Native American
+ethnic_origin,m0,African American 1
+ethnic_origin,m1,Angolan
+ethnic_origin,m2,Ashanti
+ethnic_origin,m3,Basotho
+ethnic_origin,m4,Benin
+ethnic_origin,m5,Bhutanese
+ethnic_origin,m6,Burkina Faso
+ethnic_origin,m7,Burundi
+ethnic_origin,m8,Cameroon
+ethnic_origin,m9,Cent Afric Rep
+ethnic_origin,ma,Chad
+ethnic_origin,mb,Comoros
+ethnic_origin,mc,Congo
+ethnic_origin,md,Equat Guinea
+ethnic_origin,me,Ethiopian
+ethnic_origin,mf,Gabon
+ethnic_origin,mg,Gambia
+ethnic_origin,mh,Ghana
+ethnic_origin,mj,Guinea-Bissea
+ethnic_origin,mk,Guyana
+ethnic_origin,ml,Ivory Coast
+ethnic_origin,mm,Kenya
+ethnic_origin,mn,Lesotho
+ethnic_origin,mo,Liberian
+ethnic_origin,mp,Madagascar
+ethnic_origin,mq,Malawi
+ethnic_origin,mr,Mali
+ethnic_origin,ms,Namibian
+ethnic_origin,mt,Nigerian
+ethnic_origin,mu,Mozambique
+ethnic_origin,mv,Papua New Guinea
+ethnic_origin,mw,Ruandan
+ethnic_origin,mx,Senegalese
+ethnic_origin,my,Siere Leone
+ethnic_origin,mz,Somalia
+ethnic_origin,n1,Danish
+ethnic_origin,n2,Dutch
+ethnic_origin,n3,Finnish
+ethnic_origin,n4,Icelandic
+ethnic_origin,n5,Norwegian
+ethnic_origin,n6,Scotch
+ethnic_origin,n7,Swedish
+ethnic_origin,n8,Welsh
+ethnic_origin,r1,Aleut
+ethnic_origin,r2,Myanmar
+ethnic_origin,r3,Chinese
+ethnic_origin,r5,Hawaiian
+ethnic_origin,r6,Indonesian
+ethnic_origin,r7,Japanese
+ethnic_origin,r8,Khmer
+ethnic_origin,r9,Korean
+ethnic_origin,ra,Laotian
+ethnic_origin,rb,Malay
+ethnic_origin,rc,Mongolian
+ethnic_origin,rd,Other Asian
+ethnic_origin,re,Filipino
+ethnic_origin,rf,Thai
+ethnic_origin,rg,Tibetan
+ethnic_origin,rh,Vietnamese
+ethnic_origin,rj,Maldivian
+ethnic_origin,rk,Nauruan
+ethnic_origin,rm,New Zealand
+ethnic_origin,rp,Australian
+ethnic_origin,rq,Vanuatuan
+ethnic_origin,t1,Belgian
+ethnic_origin,t2,Basque
+ethnic_origin,t3,English
+ethnic_origin,t4,French
+ethnic_origin,t5,German
+ethnic_origin,t6,Irish
+ethnic_origin,t7,Italian
+ethnic_origin,t8,Portuguese
+ethnic_origin,t9,Hispanic
+ethnic_origin,tf,Luxembourgian
+ethnic_origin,th,Swiss
+ethnic_origin,tj,Manx
+ethnic_origin,u0,Albanian
+ethnic_origin,u1,Armenian
+ethnic_origin,u2,Austrian
+ethnic_origin,u3,Azerb
+ethnic_origin,u4,Bosnian
+ethnic_origin,u5,Bulgarian
+ethnic_origin,u6,Byelorussian
+ethnic_origin,u7,Chechnian
+ethnic_origin,u8,Croatian
+ethnic_origin,u9,Czech
+ethnic_origin,ua,Estonian
+ethnic_origin,ub,Georgian
+ethnic_origin,uc,Hungarian
+ethnic_origin,ud,Kazakh
+ethnic_origin,ue,Kirghiz
+ethnic_origin,uf,Kyrgyzstani
+ethnic_origin,ug,Latvian
+ethnic_origin,uh,Lithuanian
+ethnic_origin,ui,Moldavian
+ethnic_origin,uj,Polish
+ethnic_origin,uk,Romanian
+ethnic_origin,ul,Russian
+ethnic_origin,um,Serbian
+ethnic_origin,un,Slovakian
+ethnic_origin,up,Slovenian
+ethnic_origin,uq,Tajikistan
+ethnic_origin,ur,Tajik
+ethnic_origin,ut,Turkmenistan
+ethnic_origin,uv,Ukrainian
+ethnic_origin,uw,Uzbekistani
+ethnic_origin,w0,South African
+ethnic_origin,w1,Surinam
+ethnic_origin,w2,Sudanese
+ethnic_origin,w3,Swaziland
+ethnic_origin,w4,Tanzanian
+ethnic_origin,w5,Togo
+ethnic_origin,w6,Tonga
+ethnic_origin,w7,Ugandan
+ethnic_origin,w8,Xhosa
+ethnic_origin,w9,Zaire
+ethnic_origin,wa,Zambian
+ethnic_origin,wb,Zimbabwe
+ethnic_origin,wc,Zulu
+ethnic_origin,we,Djibouti
+ethnic_origin,wf,Guinean
+ethnic_origin,wg,Mauritania
+ethnic_origin,wh,Niger
+ethnic_origin,wj,Seychelles
+ethnic_origin,wk,Western Samoa
+ethnic_origin,wl,African American 2
+ethnic_origin,wm,Botswanian
+ethnic_origin,wp,Caribbean African American
+ethnic_origin,xx,Multi-Ethnic
+education,a,High School Graduate
+education,b,College Graduate
+education,c,Graduate School Graduate
+education,d,Vocational/Technical School Graduate
+marital_status,a,Inferred Married
+marital_status,b,Inferred Single
+marital_status,m,Married
+marital_status,s,Single
+hh_generations,1,1 Adult
+hh_generations,2,Adult / Child
+hh_generations,3,Adults / Child / Parent
+home_ownership,h,Homeowner
+home_ownership,r,Renter
+dwelling_type,a,N/A
+dwelling_type,b,N/A
+dwelling_type,c,N/A
+dwelling_type,m,Multi-Unit Residential Home
+dwelling_type,n,N/A
+dwelling_type,p,N/A
+dwelling_type,s,Single-Family Home
+dwelling_type,t,N/A
+dwelling_type,w,N/A
+dwelling_type,x,N/A
+property_ac_type,a,Central
+property_ac_type,b,Central and Unit
+property_ac_type,c,Dual Unit
+property_ac_type,d,Evaporative
+property_ac_type,e,Heat Pump
+property_ac_type,f,Refrigeration
+property_ac_type,g,Package
+property_ac_type,h,Separate System
+property_ac_type,i,Split System
+property_ac_type,j,Wall Unit
+property_ac_type,k,Window Unit
+property_ac_type,l,Wall/Window Unit
+property_fuel_type,e,Electric
+property_fuel_type,g,Gas
+property_fuel_type,o,Oil
+property_fuel_type,p,Gas Public/Piped
+property_water_type,1,Commercial
+property_water_type,2,Private
+property_water_type,3,Public
+property_water_type,4,Well
+property_sewer_type,1,Commercial
+property_sewer_type,2,Private
+property_sewer_type,3,Public
+property_sewer_type,4,Septic
+credit_rating,a,800+
+credit_rating,b,750 - 799
+credit_rating,c,700 - 749
+credit_rating,d,650 - 699
+credit_rating,e,600 - 649
+credit_rating,f,550 - 599
+credit_rating,g,500-549
+credit_rating,h,Under 499
+hh_income_group,a,"Under $10,000"
+hh_income_group,b,"$10,000 - $14,999"
+hh_income_group,c,"$15,000 - $19,999"
+hh_income_group,d,"$20,000 - $24,999"
+hh_income_group,e,"$25,000 - $29,999"
+hh_income_group,f,"$30,000 - $34,999"
+hh_income_group,g,"$35,000 - $39,999"
+hh_income_group,h,"$40,000 - $44,999"
+hh_income_group,i,"$45,000 - $49,999"
+hh_income_group,j,"$50,000 - $54,999"
+hh_income_group,k,"$55,000 - $59,999"
+hh_income_group,l,"$60,000 - $64,999"
+hh_income_group,m,"$65,000 - $74,999"
+hh_income_group,n,"$75,000 - $99,999"
+hh_income_group,o,"$100,000 - $149,999"
+hh_income_group,p,"$150,000 - $174,999"
+hh_income_group,q,"$175,000 - $199,999"
+hh_income_group,r,"$200,000 - $249,999"
+hh_income_group,s,"$250,000 +"
+net_worth_group,a,Less than $1
+net_worth_group,b,"$1 - $4,999"
+net_worth_group,c,"$5,000 - $9,999"
+net_worth_group,d,"$10,000 - $24,999"
+net_worth_group,e,"$25,000 - $49,999"
+net_worth_group,f,"$50,000 - $99,999"
+net_worth_group,g,"$100,000 - $249,999"
+net_worth_group,h,"$250,000 - $499,999"
+net_worth_group,i,"Greater than $499,999"
+occupation_business_owner,1,Accountant
+occupation_business_owner,2,Builder
+occupation_business_owner,3,Contractor
+occupation_business_owner,4,Dealer/Retailer/Storekeeper
+occupation_business_owner,5,Distributor/Wholesaler
+occupation_business_owner,6,Funeral Director
+occupation_business_owner,7,Maker/Manufacturer
+occupation_business_owner,8,Owner
+occupation_business_owner,9,Partner
+occupation_business_owner,a,Self-Employed
+occupation,a194,Coast Guard
+occupation,a197,Navy Credit Union Trades
+occupation,a198,Army Credit Union Trades
+occupation,a199,Armed Forces
+occupation,c120,Police/Trooper
+occupation,c121,Mail/Postmaster
+occupation,c122,Mail Carrier/Postal
+occupation,c123,Judge/Referee
+occupation,c124,Firefighter
+occupation,c125,Court Reporter
+occupation,c126,Corrections/Probation/Parole
+occupation,c127,Civil Service/Government
+occupation,c128,Air Traffic Control
+occupation,e793,Vice President
+occupation,e794,Treasurer
+occupation,e795,President
+occupation,e796,Politician/Legislator/Diplomat
+occupation,e797,Comptroller
+occupation,e798,CEO/CFO/Chairman/Corp Officer
+occupation,e799,Executive/Upper Management
+occupation,h326,Social Worker/Case Worker
+occupation,h327,Nurse/LPN
+occupation,h328,Nurse (Registered)
+occupation,h329,Nurse
+occupation,h330,Therapists/Physical
+occupation,h331,Therapist
+occupation,h332,Technician/X-ray
+occupation,h333,Technician/Lab
+occupation,h334,Psychologist
+occupation,h335,Pharmacist/Pharmacy
+occupation,h336,Optometrist
+occupation,h337,Optician
+occupation,h338,Nurses Aide/Orderly
+occupation,h339,Medical/Paramedic
+occupation,h340,Medical Technician
+occupation,h341,Medical Secretary
+occupation,h342,Medical Assistant
+occupation,h343,Health Care
+occupation,h344,Dietician
+occupation,h345,Dentist
+occupation,h346,Dental Hygienist
+occupation,h347,Dental Assistant
+occupation,h348,Chiropractor
+occupation,i143,Trainer
+occupation,i144,Teacher
+occupation,i145,Professor
+occupation,i146,Lecturer
+occupation,i147,Instructor
+occupation,i148,Counselor
+occupation,i149,Coach
+occupation,l394,Welder
+occupation,l395,Waiter/Waitress
+occupation,l396,Utility
+occupation,l397,Upholstery
+occupation,l398,Typesetter
+occupation,l399,Transportation
+occupation,l400,Toolmaker
+occupation,l401,Sorter
+occupation,l402,Shipping/Import/Export/Custom
+occupation,l403,Sheet Metal Worker/Steel Worker
+occupation,l404,Setup man
+occupation,l405,Seamstress/Tailor/Handicraft
+occupation,l406,Sanitation/Exterminator
+occupation,l407,Roofer
+occupation,l408,Repairman
+occupation,l409,Production
+occupation,l410,Printer
+occupation,l411,Presser
+occupation,l412,Press Operator
+occupation,l413,Porter
+occupation,l414,Polisher
+occupation,l415,Plumber
+occupation,l416,Pipe fitter
+occupation,l417,Parts (Auto Etc.)
+occupation,l418,Painter
+occupation,l419,Packer
+occupation,l420,Operator/Machine Operator
+occupation,l421,Operator/Forklift Operator
+occupation,l422,Operator/Crane Operator
+occupation,l423,Operator/Boilermaker
+occupation,l424,Operator
+occupation,l425,Oil Industry/Driller
+occupation,l426,Mold Maker/Molder/Injection Mold
+occupation,l427,Miner
+occupation,l428,Millwright
+occupation,l429,Mill worker
+occupation,l430,Meter Reader
+occupation,l431,Mechanic
+occupation,l432,Material Handler
+occupation,l433,Mason/Brick/Etc.
+occupation,l434,Maintenance/Supervisor
+occupation,l435,Maintenance
+occupation,l436,Machinist
+occupation,l437,Locksmith
+occupation,l438,Loader
+occupation,l439,Lithographer
+occupation,l440,Lineman
+occupation,l441,Laborer
+occupation,l442,Journeyman
+occupation,l443,Janitor
+occupation,l444,Ironworker
+occupation,l445,Installer
+occupation,l446,Inspector
+occupation,l447,Housekeeper/Maid
+occupation,l448,Helper
+occupation,l449,Grocer
+occupation,l450,Grinder
+occupation,l451,Glazier
+occupation,l452,Gardener/Landscaper
+occupation,l453,Furrier
+occupation,l454,Foundry Worker
+occupation,l455,Forestry
+occupation,l456,Foreman/Shop Foreman
+occupation,l457,Foreman/Crew leader
+occupation,l458,Food Service
+occupation,l459,Fitter
+occupation,l460,Fisherman/Seaman
+occupation,l461,Finisher
+occupation,l462,Farmer/Dairyman
+occupation,l463,Factory Workman
+occupation,l464,Fabricator
+occupation,l465,Electrician
+occupation,l466,Driver/Truck Driver
+occupation,l467,Driver/Bus Driver
+occupation,l468,Driver
+occupation,l469,Dock Worker
+occupation,l470,Cutter
+occupation,l471,Custodian
+occupation,l472,Crewman
+occupation,l473,Courier/Delivery/Messenger
+occupation,l474,Cosmetologist
+occupation,l475,Cook
+occupation,l476,Construction
+occupation,l477,Conductor
+occupation,l478,Clerk/Stock
+occupation,l479,Clerk/Produce
+occupation,l480,Clerk/Deli
+occupation,l481,Cleaner/Laundry
+occupation,l482,Child Care/Day Care/Babysitter
+occupation,l483,Chef/Butler
+occupation,l484,Carpenter/Furniture/Woodworking
+occupation,l485,Butcher/Meat Cutter
+occupation,l486,Brewer
+occupation,l487,Brakeman
+occupation,l488,Bodyman
+occupation,l489,Binder
+occupation,l490,Bartender
+occupation,l491,Barber/Hairstylist/Beautician
+occupation,l492,Baker
+occupation,l493,Auto Mechanic
+occupation,l494,Attendant
+occupation,l495,Athlete/Professional
+occupation,l496,Assembler
+occupation,l497,Apprentice
+occupation,l498,Animal Technician/Groomer
+occupation,m673,Supervisor
+occupation,m674,Superintendent
+occupation,m675,Principal/Dean/Educator
+occupation,m676,Planner
+occupation,m677,Manager/Warehouse Manager
+occupation,m678,Manager/Traffic Manager
+occupation,m679,Manager/Store Manager
+occupation,m680,Manager/Sales Manager
+occupation,m681,Manager/Regional Manager
+occupation,m682,Manager/Property Manager
+occupation,m683,Manager/Project Manager
+occupation,m684,Manager/Product Manager
+occupation,m685,Manager/Plant Manager
+occupation,m686,Manager/Office Manager
+occupation,m687,Manager/Marketing Manager
+occupation,m688,Manger/General Manager
+occupation,m689,Manager/Division Manager
+occupation,m690,Manager/District Manager
+occupation,m691,Manager/Credit Manager
+occupation,m692,Manager/Branch Manager
+occupation,m693,Manager/Assistant Manager
+occupation,m694,Manager
+occupation,m695,Editor
+occupation,m696,Director/Executive Director
+occupation,m697,Director/Art Director
+occupation,m698,Account Executive
+occupation,p244,Volunteer
+occupation,p245,Student
+occupation,p246,Part Time
+occupation,p247,Retired/Pensioner
+occupation,p249,Homemaker
+occupation,s295,Data Entry/Key Punch
+occupation,s296,Typist
+occupation,s297,Secretary
+occupation,s298,Legal Secretary
+occupation,s299,Legal/Paralegal/Assistant
+occupation,t896,Computer/Systems Analyst
+occupation,t897,Computer Programmer
+occupation,t898,Computer Operator
+occupation,t978,Veterinarian
+occupation,t979,Statistician/Actuary
+occupation,t980,Scientist
+occupation,t981,Pilot
+occupation,t982,Pastor
+occupation,t983,Medical Doctor/Physician
+occupation,t984,Librarian/Archivist
+occupation,t985,Legal/Attorney/Lawyer
+occupation,t987,Geologist
+occupation,t988,Engineer/Mechanical
+occupation,t989,Engineer/Industrial
+occupation,t990,Engineer/Field
+occupation,t991,Engineer/Electrical/Electronic
+occupation,t992,Engineer/Civil
+occupation,t993,Engineer/Chemical
+occupation,t994,Engineer/Aerospace
+occupation,t995,Engineer
+occupation,t996,Curator
+occupation,t997,Chemist
+occupation,t998,Architect
+occupation,w520,Writer
+occupation,w521,Water Treatment
+occupation,w522,Ward Clerk
+occupation,w523,Union Member/Rep.
+occupation,w524,Travel Agent
+occupation,w525,Transcripter/Translator
+occupation,w526,Tester
+occupation,w527,Teller/Bank Teller
+occupation,w528,Telemarketer/Telephone/Operator
+occupation,w529,Technician
+occupation,w530,Surveyor
+occupation,w531,Security
+occupation,w532,Sales Clerk/Counterman
+occupation,w533,Sales
+occupation,w534,Researcher
+occupation,w535,Reporter
+occupation,w536,Receptionist
+occupation,w537,Real Estate/Realtor
+occupation,w538,Quality Control
+occupation,w539,Purchasing
+occupation,w540,Publishing
+occupation,w541,Public Relations
+occupation,w542,Photography
+occupation,w543,Personnel/Recruiter/Interviewer
+occupation,w544,Musician/Music/Dance
+occupation,w545,Model
+occupation,w546,Merchandiser
+occupation,w547,Marketing
+occupation,w548,Jeweler
+occupation,w549,Interior Designer
+occupation,w550,Insurance/Underwriter
+occupation,w551,Insurance/Agent
+occupation,w552,Hostess/Host/Usher
+occupation,w553,Graphic Designer/Commercial Artist
+occupation,w554,Florist
+occupation,w555,Flight Attendant/Steward
+occupation,w556,Finance
+occupation,w557,Expeditor
+occupation,w558,Estimator
+occupation,w559,Draftsman
+occupation,w560,Dispatcher
+occupation,w561,Detective/Investigator
+occupation,w562,Designer
+occupation,w563,Customer Service/Representative
+occupation,w564,Coordinator
+occupation,w565,Consultant/Advisor
+occupation,w566,Conservation/Environment
+occupation,w567,Communications
+occupation,w568,Collector
+occupation,w569,Clerk/File
+occupation,w570,Clerk
+occupation,w571,Claims Examiner/Rep/Adjudicator
+occupation,w572,Checker
+occupation,w573,Caterer
+occupation,w574,Cashier
+occupation,w575,Buyer
+occupation,w576,Broker/Stock/Trader
+occupation,w577,Broker
+occupation,w578,Bookkeeper
+occupation,w579,Banker/Loan Processor
+occupation,w580,Banker/Loan Office
+occupation,w581,Banker
+occupation,w582,Auditor
+occupation,w583,Auctioneer
+occupation,w584,Artist
+occupation,w585,Appraiser
+occupation,w586,Analyst
+occupation,w587,Aide/Assistant/Technical
+occupation,w588,Aide/Assistant/Staff
+occupation,w589,Aide/Assistant/School
+occupation,w590,Aide/Assistant/Office
+occupation,w591,Aide/Assistant/Executive
+occupation,w592,Aide/Assistant
+occupation,w593,Agent
+occupation,w594,Advertising
+occupation,w595,Administration/Management
+occupation,w596,Adjuster
+occupation,w597,Actor/Entertainer/Announcer
+occupation,w598,Accounting/Biller/Billing clerk
+party_affiliation,a,American Independent
+party_affiliation,c,Constitutional
+party_affiliation,d,Democrat
+party_affiliation,e,Reform
+party_affiliation,g,Green
+party_affiliation,i,Independent
+party_affiliation,l,Liberal
+party_affiliation,n,The Alliance Party
+party_affiliation,o,Other
+party_affiliation,p,Peace and Freedom
+party_affiliation,r,Republican
+party_affiliation,s,Socialist
+party_affiliation,u,Undeclared
