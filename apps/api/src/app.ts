@@ -11,10 +11,33 @@ export const app = express();
 
 app.use(
   cors({
-    origin: config.corsOrigin === "*" ? true : config.corsOrigin,
+    origin: (origin, callback) => {
+      // local development
+      if (!origin || origin.includes("localhost")) {
+        return callback(null, true);
+      }
+
+      // allow all vercel preview deployments
+      if (
+        origin.endsWith("-sshalu12s-projects.vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      // optional manual origin from env
+      if (
+        config.corsOrigin &&
+        origin === config.corsOrigin
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );
+
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => {
