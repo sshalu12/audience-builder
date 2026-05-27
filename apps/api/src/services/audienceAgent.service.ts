@@ -301,56 +301,56 @@ function fallbackIntentFromMessage(message: string): AudienceIntent {
 
 async function extractAudienceIntent(message: string) {
   const fallback = fallbackIntentFromMessage(message);
-  return fallback;
-}
-
-//   return generateStructuredJson<AudienceIntent>({
-//     label: "audience-intent",
-//     schema: AudienceIntentSchema,
-//     fallback,
-//     messages: [
-//       {
-//         role: "system",
-//         content: `
-// You are an advertising audience planning assistant.
-
-// Extract targeting intent from a planner's natural language request.
-// Extract requestedSignalCount from the user request.
-// Generate searchKeywords for taxonomy lookup.
-// The user may say "audience", "segment", or "signals"; treat those as targeting signals.
-
-// Return valid JSON only.
-
-// Rules:
-// - Do not invent taxonomy IDs.
-// - Extract keywords that can be used to search taxonomy data.
-// - For cars, include keywords such as automotive, cars, vehicle, SUV, dealership, auto.
-// - For fitness, include keywords such as fitness, gym, exercise, running, hiking, yoga.
-// - Flag sensitive targeting requests involving religion, ethnicity, race, health condition, sexual orientation, disability, or political affiliation.
-// `,
-//       },
-//       {
-//         role: "user",
-//         content: JSON.stringify({
-//           request: message,
-//           requiredShape: {
-//             ageRange: { min: "number|null", max: "number|null" },
-//             demographics: ["string"],
-//             interests: ["string"],
-//             behaviors: ["string"],
-//             locations: ["string"],
-//             transactions: ["string"],
-//             exclusions: ["string"],
-//             sensitiveRequest: "boolean",
-//             safeAlternative: "string|null",
-//             clarificationNeeded: "boolean",
-//             clarificationQuestion: "string|null",
-//           },
-//         }),
-//       },
-//     ],
-//   });
+//   return fallback;
 // }
+
+  return generateStructuredJson<AudienceIntent>({
+    label: "audience-intent",
+    schema: AudienceIntentSchema,
+    fallback,
+    messages: [
+      {
+        role: "system",
+        content: `
+You are an advertising audience planning assistant.
+
+Extract targeting intent from a planner's natural language request.
+Extract requestedSignalCount from the user request.
+Generate searchKeywords for taxonomy lookup.
+The user may say "audience", "segment", or "signals"; treat those as targeting signals.
+
+Return valid JSON only.
+
+Rules:
+- Do not invent taxonomy IDs.
+- Extract keywords that can be used to search taxonomy data.
+- For cars, include keywords such as automotive, cars, vehicle, SUV, dealership, auto.
+- For fitness, include keywords such as fitness, gym, exercise, running, hiking, yoga.
+- Flag sensitive targeting requests involving religion, ethnicity, race, health condition, sexual orientation, disability, or political affiliation.
+`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          request: message,
+          requiredShape: {
+            ageRange: { min: "number|null", max: "number|null" },
+            demographics: ["string"],
+            interests: ["string"],
+            behaviors: ["string"],
+            locations: ["string"],
+            transactions: ["string"],
+            exclusions: ["string"],
+            sensitiveRequest: "boolean",
+            safeAlternative: "string|null",
+            clarificationNeeded: "boolean",
+            clarificationQuestion: "string|null",
+          },
+        }),
+      },
+    ],
+  });
+}
 
 function candidateToRecommendedSignal(
   candidate: RankedTaxonomySignal,
@@ -432,58 +432,58 @@ async function recommendAudience(
     score: candidate.score,
   }));
 
-//   const recommendation = await generateStructuredJson<AudienceRecommendation>({
-//     label: "audience-recommendation",
-//     schema: AudienceRecommendationSchema,
-//     fallback,
-//     messages: [
-//       {
-//         role: "system",
-//         content: `
-// You select advertising targeting signals from a provided taxonomy.
+  const recommendation = await generateStructuredJson<AudienceRecommendation>({
+    label: "audience-recommendation",
+    schema: AudienceRecommendationSchema,
+    fallback,
+    messages: [
+      {
+        role: "system",
+        content: `
+You select advertising targeting signals from a provided taxonomy.
 
-// Critical rules:
-// - You may ONLY recommend candidate IDs supplied by the backend.
-// - Do NOT invent signals.
-// - Do NOT invent IDs.
-// - Every recommended signal must be from the candidates list.
-// - Prefer behavioral, transaction, and location signals when relevant.
-// - Avoid sensitive targeting.
-// - confidence MUST be a number between 0 and 1, not a string.
-// - Return valid JSON only.
-// `,
-//       },
-//       {
-//         role: "user",
-//         content: JSON.stringify({
-//           plannerRequest: message,
-//           extractedIntent: intent,
-//           candidates: candidatePayload,
-//           outputShape: {
-//             audienceName: "string",
-//             summary: "string",
-//             recommendedSignals: [
-//               {
-//                 id: "candidate id only",
-//                 source:
-//                   "LOCATION|TRANSACTION|CONSUMER_GRAPH_FIELD|CONSUMER_GRAPH_VALUE",
-//                 name: "candidate name",
-//                 path: "candidate path|null",
-//                 confidence: 0.85,
-//                 rationale: "why this signal fits",
-//               },
-//             ],
-//             rejectedSignals: [
-//               { id: "string", name: "string", reason: "string" },
-//             ],
-//             clarificationNeeded: "boolean",
-//             clarificationQuestion: "string|null",
-//           },
-//         }),
-//       },
-//     ],
-//   });
-  const recommendation = fallback;
+Critical rules:
+- You may ONLY recommend candidate IDs supplied by the backend.
+- Do NOT invent signals.
+- Do NOT invent IDs.
+- Every recommended signal must be from the candidates list.
+- Prefer behavioral, transaction, and location signals when relevant.
+- Avoid sensitive targeting.
+- confidence MUST be a number between 0 and 1, not a string.
+- Return valid JSON only.
+`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          plannerRequest: message,
+          extractedIntent: intent,
+          candidates: candidatePayload,
+          outputShape: {
+            audienceName: "string",
+            summary: "string",
+            recommendedSignals: [
+              {
+                id: "candidate id only",
+                source:
+                  "LOCATION|TRANSACTION|CONSUMER_GRAPH_FIELD|CONSUMER_GRAPH_VALUE",
+                name: "candidate name",
+                path: "candidate path|null",
+                confidence: 0.85,
+                rationale: "why this signal fits",
+              },
+            ],
+            rejectedSignals: [
+              { id: "string", name: "string", reason: "string" },
+            ],
+            clarificationNeeded: "boolean",
+            clarificationQuestion: "string|null",
+          },
+        }),
+      },
+    ],
+  });
+  // const recommendation = fallback;
   
   const candidateById = new Map(
     candidatePayload.map((candidate) => [candidate.id, candidate]),
@@ -810,61 +810,61 @@ async function decideNextAgentAction({
   history: Array<{ role: string; content: string }>;
 }) {
   const fallback = fallbackAgentDecision(message, Boolean(existingPlan));
-  return fallback;
-}
-
-//   return generateStructuredJson<AgentDecision>({
-//     label: "agent-decision",
-//     schema: AgentDecisionSchema,
-//     fallback,
-//     messages: [
-//       {
-//         role: "system",
-//         content: `
-// You are a conversational advertising audience planning assistant.
-
-// You can answer normal questions, explain targeting choices, and also build, refine, approve, and estimate advertising audiences.
-
-// Return valid JSON only.
-
-// Rules:
-// - If the user is asking a general question, use GENERAL_REPLY.
-// - If the user describes a target audience and no plan exists, use BUILD_AUDIENCE.
-// - If there is an existing plan and the user asks to add, include, remove, broaden, narrow, focus, or add more signals, use REFINE_AUDIENCE or REMOVE_SIGNAL.
-// - If the user says "add more", "add 5 more", "same category", or similar, use REFINE_AUDIENCE and do not replace the existing audience.
-// - If the user asks for approval, use APPROVE_AUDIENCE.
-// - If the user asks for estimate, use ESTIMATE_AUDIENCE.
-
-// Output requirements:
-// - audienceRequest MUST always be a plain string or null.
-// - signalsToAdd MUST always be an array.
-// - signalsToRemove MUST always be an array.
-// - Never return null arrays.
-// - Never return objects for audienceRequest.
-// `,
-//       },
-//       {
-//         role: "user",
-//         content: JSON.stringify({
-//           latestUserMessage: message,
-//           hasExistingPlan: Boolean(existingPlan),
-//           currentPlan: existingPlan,
-//           recentConversation: history.slice(-12),
-//           outputShape: {
-//             action:
-//               "GENERAL_REPLY|BUILD_AUDIENCE|REFINE_AUDIENCE|REMOVE_SIGNAL|ADD_SIGNAL|APPROVE_AUDIENCE|ESTIMATE_AUDIENCE|ASK_CLARIFICATION",
-//             assistantReply: "natural conversational response to show user",
-//             audienceRequest: "audience request to build/refine from, or null",
-//             signalsToAdd: ["signal keywords to add"],
-//             signalsToRemove: ["signal keywords to remove"],
-//             shouldEstimate: "boolean",
-//             shouldApprove: "boolean",
-//           },
-//         }),
-//       },
-//     ],
-//   });
+//   return fallback;
 // }
+
+  return generateStructuredJson<AgentDecision>({
+    label: "agent-decision",
+    schema: AgentDecisionSchema,
+    fallback,
+    messages: [
+      {
+        role: "system",
+        content: `
+You are a conversational advertising audience planning assistant.
+
+You can answer normal questions, explain targeting choices, and also build, refine, approve, and estimate advertising audiences.
+
+Return valid JSON only.
+
+Rules:
+- If the user is asking a general question, use GENERAL_REPLY.
+- If the user describes a target audience and no plan exists, use BUILD_AUDIENCE.
+- If there is an existing plan and the user asks to add, include, remove, broaden, narrow, focus, or add more signals, use REFINE_AUDIENCE or REMOVE_SIGNAL.
+- If the user says "add more", "add 5 more", "same category", or similar, use REFINE_AUDIENCE and do not replace the existing audience.
+- If the user asks for approval, use APPROVE_AUDIENCE.
+- If the user asks for estimate, use ESTIMATE_AUDIENCE.
+
+Output requirements:
+- audienceRequest MUST always be a plain string or null.
+- signalsToAdd MUST always be an array.
+- signalsToRemove MUST always be an array.
+- Never return null arrays.
+- Never return objects for audienceRequest.
+`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          latestUserMessage: message,
+          hasExistingPlan: Boolean(existingPlan),
+          currentPlan: existingPlan,
+          recentConversation: history.slice(-12),
+          outputShape: {
+            action:
+              "GENERAL_REPLY|BUILD_AUDIENCE|REFINE_AUDIENCE|REMOVE_SIGNAL|ADD_SIGNAL|APPROVE_AUDIENCE|ESTIMATE_AUDIENCE|ASK_CLARIFICATION",
+            assistantReply: "natural conversational response to show user",
+            audienceRequest: "audience request to build/refine from, or null",
+            signalsToAdd: ["signal keywords to add"],
+            signalsToRemove: ["signal keywords to remove"],
+            shouldEstimate: "boolean",
+            shouldApprove: "boolean",
+          },
+        }),
+      },
+    ],
+  });
+}
 
 async function loadPlan(conversationId: string) {
   const plan = await prisma.audiencePlan.findUnique({
