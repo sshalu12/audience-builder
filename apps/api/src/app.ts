@@ -4,7 +4,6 @@ import { config } from "./config.js";
 import { adminRouter } from "./routes/admin.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { conversationRouter } from "./routes/conversation.routes.js";
-import { taxonomyRouter } from "./routes/taxonomy.routes.js";
 import { HttpError } from "./utils/httpError.js";
 
 export const app = express();
@@ -46,7 +45,6 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/conversations", conversationRouter);
-app.use("/api/taxonomy", taxonomyRouter);
 app.use("/api/admin", adminRouter);
 
 app.use((_req, _res, next) => {

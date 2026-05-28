@@ -1,25 +1,33 @@
 import { z } from "zod";
 
+const BooleanishSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+
+  const normalized = value.trim().toLowerCase();
+  if (["true", "yes", "y", "1"].includes(normalized)) return true;
+  if (["false", "no", "n", "0"].includes(normalized)) return false;
+
+  return value;
+}, z.boolean());
+
 export const AgeRangeSchema = z
   .object({
-    min: z.number().int().nullable(),
-    max: z.number().int().nullable(),
+    min: z.coerce.number().int().nullable(),
+    max: z.coerce.number().int().nullable(),
   })
   .nullable();
 
-
-
 export const AudienceIntentSchema = z.object({
-  ageRange: AgeRangeSchema,
+  ageRange: AgeRangeSchema.default(null),
   demographics: z.array(z.string()).default([]),
   interests: z.array(z.string()).default([]),
   behaviors: z.array(z.string()).default([]),
   locations: z.array(z.string()).default([]),
   transactions: z.array(z.string()).default([]),
   exclusions: z.array(z.string()).default([]),
-  sensitiveRequest: z.boolean().default(false),
+  sensitiveRequest: BooleanishSchema.default(false),
   safeAlternative: z.string().nullable().default(null),
-  clarificationNeeded: z.boolean().default(false),
+  clarificationNeeded: BooleanishSchema.default(false),
   clarificationQuestion: z.string().nullable().default(null),
   requestedSignalCount: z.coerce.number().nullable().optional(),
   searchKeywords: z.array(z.string()).default([]),
@@ -44,8 +52,12 @@ export const RecommendedSignalSchema = z.object({
 export type RecommendedSignal = z.infer<typeof RecommendedSignalSchema>;
 
 export const AudienceRecommendationSchema = z.object({
-  audienceName: z.string(),
-  summary: z.string(),
+  audienceName: z.string().default("Draft audience"),
+  summary: z
+    .string()
+    .default(
+      "Matched the request to taxonomy-backed targeting signals from the available catalog.",
+    ),
   recommendedSignals: z.array(RecommendedSignalSchema).default([]),
   rejectedSignals: z
     .array(
@@ -53,24 +65,23 @@ export const AudienceRecommendationSchema = z.object({
         id: z.string(),
         name: z.string(),
         reason: z.string(),
-      })
+      }),
     )
     .default([]),
-  clarificationNeeded: z.boolean().default(false),
+  clarificationNeeded: BooleanishSchema.default(false),
   clarificationQuestion: z.string().nullable().default(null),
 });
 
 export type AudienceRecommendation = z.infer<typeof AudienceRecommendationSchema>;
 
-export const AudienceEstimateSchema = z.object({
-  estimatedMin: z.number().int(),
-  estimatedMax: z.number().int(),
-  confidence: z.number().min(0).max(1),
-  methodology: z.string(),
-  assumptions: z.array(z.string()),
-});
+export type AudienceEstimate = {
+  estimatedMin: number;
+  estimatedMax: number;
+  confidence: number;
+  methodology: string;
+  assumptions: string[];
+};
 
-export type AudienceEstimate = z.infer<typeof AudienceEstimateSchema>;
 export const AgentDecisionSchema = z.object({
   action: z.enum([
     "GENERAL_REPLY",
@@ -82,40 +93,28 @@ export const AgentDecisionSchema = z.object({
     "ESTIMATE_AUDIENCE",
     "ASK_CLARIFICATION",
   ]),
-  assistantReply: z.string(),
+  assistantReply: z.string().default(""),
   audienceRequest: z
-  .union([
-    z.string(),
-    z.object({
-      text: z.string(),
+    .union([z.string(), z.object({ text: z.string() })])
+    .nullable()
+    .optional()
+    .transform((value) => {
+      if (!value) return null;
+      if (typeof value === "string") return value;
+      return value.text;
     }),
-  ])
-  .nullable()
-  .optional()
-  .transform((value) => {
-    if (!value) return null;
-
-    if (typeof value === "string") {
-      return value;
-    }
-
-    return value.text;
-  }),
   signalsToAdd: z
-  .array(z.string())
-  .nullable()
-  .default([])
-  .transform((v) => v ?? []),
-
-signalsToRemove: z
-  .array(z.string())
-  .nullable()
-  .default([])
-  .transform((v) => v ?? []),
-  shouldEstimate: z.boolean().default(false),
-  shouldApprove: z.boolean().default(false),
+    .array(z.string())
+    .nullable()
+    .default([])
+    .transform((value) => value ?? []),
+  signalsToRemove: z
+    .array(z.string())
+    .nullable()
+    .default([])
+    .transform((value) => value ?? []),
+  shouldEstimate: BooleanishSchema.default(false),
+  shouldApprove: BooleanishSchema.default(false),
 });
 
-export type AgentDecision = z.infer<
-  typeof AgentDecisionSchema
->;
+export type AgentDecision = z.infer<typeof AgentDecisionSchema>;

@@ -102,17 +102,6 @@ export async function removeSignal(conversationId: string, signalId: string) {
   });
 }
 
-export async function addSignal(conversationId: string, signalId: string) {
-  return apiFetch<{ conversation: Conversation }>(`/conversations/${conversationId}/signals/add`, {
-    method: "POST",
-    body: JSON.stringify({ signalId }),
-  });
-}
-
-export async function searchTaxonomy(q: string) {
-  return apiFetch<{ signals: TaxonomySignal[] }>(`/taxonomy/search?q=${encodeURIComponent(q)}`);
-}
-
 export async function adminUsers() {
   return apiFetch<{ users: Array<User & { _count: { conversations: number } }> }>("/admin/users");
 }

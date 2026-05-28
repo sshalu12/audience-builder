@@ -217,9 +217,6 @@ async function main() {
   };
 
   console.log("Seed complete", counts);
-  console.log("Demo users:");
-  console.log("  admin@example.com / password123");
-  console.log("  planner@example.com / password123");
 }
 
 main()

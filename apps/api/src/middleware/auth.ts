@@ -10,7 +10,7 @@ export type AuthUser = {
   role: Role;
 };
 
-export interface AuthenticatedRequest extends Request {
+interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
 

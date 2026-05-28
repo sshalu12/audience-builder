@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
-  addSignal,
   approveConversation,
   estimateConversation,
   getConversation,
@@ -9,7 +8,6 @@ import {
   sendMessage,
 } from "../api/client";
 import { SignalPanel } from "../components/SignalPanel";
-import { TaxonomySearch } from "../components/TaxonomySearch";
 import type { Conversation, Message } from "../types";
 
 function MessageBubble({ message }: { message: Message }) {
@@ -54,12 +52,29 @@ export function ChatPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!id || !input.trim()) return;
+    if (!id || !input.trim() || !conversation) return;
 
     const content = input.trim();
+    const pendingMessageId = `pending-user-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: pendingMessageId,
+      conversationId: id,
+      role: "USER",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+
     setInput("");
     setSending(true);
     setError(null);
+    setConversation((current) =>
+      current
+        ? {
+            ...current,
+            messages: [...(current.messages ?? []), optimisticMessage],
+          }
+        : current,
+    );
 
     try {
       const response = await sendMessage(id, content);
@@ -67,6 +82,16 @@ export function ChatPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message");
       setInput(content);
+      setConversation((current) =>
+        current
+          ? {
+              ...current,
+              messages: (current.messages ?? []).filter(
+                (message) => message.id !== pendingMessageId,
+              ),
+            }
+          : current,
+      );
     } finally {
       setSending(false);
     }
@@ -106,19 +131,6 @@ export function ChatPage() {
       setConversation(response.conversation);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove signal");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function addSelectedSignal(signalId: string) {
-    if (!id) return;
-    setSending(true);
-    try {
-      const response = await addSignal(id, signalId);
-      setConversation(response.conversation);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add signal");
     } finally {
       setSending(false);
     }
@@ -172,8 +184,6 @@ export function ChatPage() {
             Send
           </button>
         </form>
-
-        <TaxonomySearch onAdd={addSelectedSignal} />
       </section>
 
       <SignalPanel

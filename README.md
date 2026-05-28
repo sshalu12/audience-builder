@@ -23,14 +23,16 @@ After seeding the database:
 - Persisted conversations and messages
 - Taxonomy import from CSV files
 - Optional Google Sheets CSV download script
-- LLM-based intent extraction and signal selection when `OPENAI_API_KEY` is provided
-- Deterministic local fallback agent when no LLM key is configured
+- LLM-based intent extraction and signal selection when `GROQ_API_KEY` is provided (Groq, via its OpenAI-compatible endpoint)
+- Deterministic local fallback agent when no LLM key is configured or Groq returns invalid JSON
 - Taxonomy-grounded signal recommendations
 - Editable selected signals
 - Deterministic mock audience estimation with documented assumptions
 - Admin dashboard for users, conversations, and taxonomy preview
 
 ## Architecture
+
+For the full data-layer rationale (why Postgres + Prisma, why Redis is not a primary-store replacement, where a cache could be added later) see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ```txt
 React/Vite Web App
@@ -118,11 +120,11 @@ DATABASE_URL="postgresql://audience_builder:audience_builder@localhost:5432/audi
 JWT_SECRET="replace-with-a-long-random-secret"
 PORT=4000
 CORS_ORIGIN="http://localhost:5173"
-OPENAI_API_KEY=""
-OPENAI_MODEL="gpt-4o-mini"
+GROQ_API_KEY=""
+GROQ_MODEL="llama-3.1-8b-instant"
 ```
 
-`OPENAI_API_KEY` is optional. If it is blank, the app still works using a deterministic local fallback agent.
+`GROQ_API_KEY` is optional. If it is blank, the app still works using a deterministic local fallback agent. Get a key at <https://console.groq.com/keys>. The LLM client targets Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`).
 
 ### 4. Run Prisma migration
 
@@ -269,22 +271,32 @@ The taxonomy import preserves all rows, but recommendation search filters out se
 
 ## Audience Size Estimation
 
-No real audience count data is provided in the exercise, so the estimator is intentionally mocked but deterministic.
+No real audience count data is provided in the exercise, so the estimator is a deterministic, probabilistic model. To stay grounded, **per-signal prevalence is derived directly from the four provided CSVs** rather than hardcoded source priors:
 
-The estimator uses:
+| Provided data                | What it tells us                              | Prevalence used                                                |
+| ---------------------------- | --------------------------------------------- | -------------------------------------------------------------- |
+| `location_taxonomy.csv`      | Hierarchical visit categories (2 levels)      | Top-level only → ~12%, sub-category → ~4%                      |
+| `transaction_taxonomy.csv`   | Purchase categories (4-level hierarchy)       | Depth 1 → 0.20, 2 → 0.10, 3 → 0.05, 4 → 0.03 (deeper = narrower)|
+| `cg_data_dictionary.csv`     | Field Type + `Attributes` (= value cardinality) | `BOOL` → 0.20, `INT` → 0.80, `ALPHA(_NUM)` with N values → 1/N |
+| `cg_field_values.csv`        | Specific value of a parent field              | 1 / (parent field's `Attributes`) — e.g. gender = 2 values → 50% |
 
-- Base reachable population of 250M adults/devices
-- Source-specific narrowing factors:
-  - location signals
-  - transaction signals
-  - consumer graph fields
-  - consumer graph values
-- Rarity adjustments for terms like premium, luxury, organic, fitness, and automotive
-- Overlap discounting for multiple signals
-- Age-range narrowing when an age range is present
-- Confidence adjustment based on signal count and signal confidence
+The estimator then treats the selected signals as an **intersection (AND)** of constraints, which matches how planners think about audiences (fitness AND premium AND 25-44):
 
-This keeps estimates explainable and repeatable. In production, `estimateAudienceSize` could be replaced with real reach/count APIs.
+1. Start from a base reachable population of 250M adults/devices.
+2. Narrow the base by the requested age range first.
+3. Look up each signal's taxonomy row and assign its prevalence from the table above.
+4. Group signals by source (`LOCATION`, `TRANSACTION`, `CONSUMER_GRAPH_FIELD`, `CONSUMER_GRAPH_VALUE`).
+5. Within a group, combine signals as **OR** (multiple fitness signals are alternative ways to identify the same audience).
+6. Across groups, combine as **AND** with a small correlation lift (capped at the smallest group's probability, so no single constraint can be exceeded).
+7. Compute a min/max band and a confidence score derived from signal count, source diversity, and average per-signal match confidence.
+
+Properties:
+
+- Adding more signals across sources **narrows** the audience, instead of inflating it.
+- The result is independent of signal iteration order.
+- Confidence is a quality score over the evidence and is decoupled from the reach number itself.
+
+In production, `estimateAudienceSize` would be replaced with real reach/count APIs; the data-driven priors above are what we can defensibly compute from the exercise's inputs.
 
 ## Roles and Permissions
 
@@ -319,9 +331,6 @@ POST   /api/conversations/:id/messages
 POST   /api/conversations/:id/estimate
 POST   /api/conversations/:id/approve
 POST   /api/conversations/:id/signals/remove
-POST   /api/conversations/:id/signals/add
-
-GET    /api/taxonomy/search?q=fitness
 
 GET    /api/admin/users
 GET    /api/admin/conversations
@@ -347,8 +356,8 @@ DATABASE_URL="your-production-postgres-url"
 JWT_SECRET="long-random-secret"
 PORT=4000
 CORS_ORIGIN="https://your-frontend-domain.vercel.app"
-OPENAI_API_KEY="optional"
-OPENAI_MODEL="gpt-4o-mini"
+GROQ_API_KEY="optional"
+GROQ_MODEL="llama-3.1-8b-instant"
 ```
 
 Build command:

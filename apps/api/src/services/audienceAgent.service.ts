@@ -7,7 +7,7 @@ import {
 import { prisma } from "../db.js";
 import { HttpError } from "../utils/httpError.js";
 import { estimateAudienceSize } from "./estimate.service.js";
-import { generateStructuredJson } from "./llm.service.js";
+import { generateJson, type AgentDecisionContext } from "./llm.service.js";
 import { isSensitiveText, sensitiveRequestMessage } from "./privacy.service.js";
 import {
   AgentDecisionSchema,
@@ -99,12 +99,18 @@ function normalizeAudienceRequest(value: unknown, fallback: string) {
   return fallback;
 }
 
-function requestedAdditionalSignalCount(message: string) {
+function requestedSignalCountFromMessage(message: string) {
   const lower = message.toLowerCase();
 
   const digitMatch =
     lower.match(
-      /\b(?:add|include|recommend|show|give me)?\s*(\d{1,2})\s+(?:more|additional|new)\s*(?:audiences?|signals?|segments?|targets?)?\b/,
+      /\b(?:suggest|recommend|show|give|add|include)\s*(?:me\s*)?(\d{1,2})\s*(?:more|additional|new)?\s*(?:audiences?|signals?|segments?|targets?)\b/,
+    ) ||
+    lower.match(
+      /\b(\d{1,2})\s*(?:more|additional|new)?\s*(?:audiences?|signals?|segments?|targets?)\b/,
+    ) ||
+    lower.match(
+      /\b(?:add|include|recommend|show|give me)?\s*(\d{1,2})\s*(?:more|additional|new)\s*(?:audiences?|signals?|segments?|targets?)?\b/,
     ) ||
     lower.match(
       /\b(?:audiences?|signals?|segments?|targets?)\s*(?:of same category)?\s*(\d{1,2})\b/,
@@ -149,15 +155,9 @@ function isListSelectedSignalsRequest(message: string) {
   const lower = message.toLowerCase();
 
   return (
-    /\b(show|list|display|retrieve|get|see|view)\b.*\b(all|current|selected|added)\b.*\b(audiences?|signals?|segments?|targets?)\b/.test(
-      lower,
-    ) ||
-    /\b(all|current|selected|added)\b.*\b(audiences?|signals?|segments?|targets?)\b/.test(
-      lower,
-    ) ||
-    /\bwhat\b.*\b(audiences?|signals?|segments?|targets?)\b.*\b(added|selected|current)\b/.test(
-      lower,
-    ) ||
+    /\b(show|list|display|retrieve|get|see|view)\b.*\b(all|current|selected|added)\b.*\b(audiences?|signals?|segments?|targets?)\b/.test(lower) ||
+    /\bwhat\b.*\b(audiences?|signals?|segments?|targets?)\b.*\b(added|selected|current)\b/.test(lower) ||
+    /\bwhich\b.*\b(audiences?|signals?|segments?|targets?)\b.*\b(selected|added|current)\b/.test(lower) ||
     /\bwhat have i added\b/.test(lower)
   );
 }
@@ -171,6 +171,40 @@ function isLowConfidenceReviewRequest(message: string) {
     ) &&
     /\b(remove|delete|drop|clean|clean up|review|find|show|which)\b/.test(lower)
   );
+}
+
+// True if the planner's first message has no concrete targeting concept
+// (no behavior, interest, location, purchase, age range, or demographic noun).
+// Used to prompt for a real brief instead of building a random draft from
+// "build me an audience", "create a segment", etc.
+function isVagueAudienceBrief(message: string) {
+  const cleaned = message.trim().toLowerCase();
+  if (cleaned.length === 0) return true;
+
+  const wordCount = cleaned.split(/\s+/).length;
+
+  const onlyMetaWords =
+    /^(build|create|make|generate|set up|setup|give|show|suggest|recommend|design|draft)\s+(me\s+)?(an?\s+|some\s+|the\s+)?(audience|audiences|segment|segments|signals?|targets?|plan|draft)s?\.?\??$/i;
+  if (onlyMetaWords.test(cleaned)) return true;
+
+  if (wordCount <= 2 && /^(audience|signals?|segments?|targets?)\.?$/i.test(cleaned)) {
+    return true;
+  }
+
+  // Has an age range -> not vague.
+  if (/\b\d{1,2}\s*(?:-|to)\s*\d{1,2}\b/.test(cleaned)) return false;
+  if (/\b(?:aged|age|years? old|under|over)\s+\d{1,2}\b/.test(cleaned)) return false;
+
+  // Has a recognisable targeting concept noun -> not vague.
+  const conceptPattern =
+    /\b(fitness|gym|exercise|yoga|running|runner|hiker|hiking|cyclist|sports?|athletic|premium|luxury|affluent|upscale|wealthy|high[- ]income|parent|parents|mom|moms|dad|dads|kids?|children|family|toddler|baby|babies|coffee|cafe|grocery|groceries|organic|food|foodie|dining|restaurant|wine|beer|cocktail|travel|traveler|airline|hotel|tourism|vacation|auto|automotive|cars?|suv|truck|dealership|fashion|beauty|cosmetic|tech|technology|gamer|gaming|outdoor|hiking|home|homeowner|renter|furniture|pet|pets|dog|cat|investor|donor|charity|charitable|graduate|student|professional|retiree|senior|millennials?|gen[ -]?z|boomers?)\b/i;
+  if (conceptPattern.test(cleaned)) return false;
+
+  // Long descriptive sentences (>= 5 meaningful words) are probably specific
+  // even if no single keyword matches our list.
+  if (wordCount >= 6) return false;
+
+  return true;
 }
 
 function isAffirmativeConfirmation(message: string) {
@@ -307,12 +341,19 @@ function fallbackIntentFromMessage(message: string): AudienceIntent {
   };
 }
 
-async function extractAudienceIntent(message: string) {
+async function extractAudienceIntent(
+  message: string,
+  context?: {
+    mode: "BUILD" | "REFINE";
+    currentBrief?: string | null;
+    currentSignals?: string[];
+    signalsToAdd?: string[];
+    signalsToRemove?: string[];
+  },
+) {
   const fallback = fallbackIntentFromMessage(message);
-//   return fallback;
-// }
 
-  return generateStructuredJson<AudienceIntent>({
+  return generateJson<AudienceIntent>({
     label: "audience-intent",
     schema: AudienceIntentSchema,
     fallback,
@@ -324,15 +365,19 @@ You are an advertising audience planning assistant.
 
 Extract targeting intent from a planner's natural language request.
 Extract requestedSignalCount from the user request.
-Generate searchKeywords for taxonomy lookup.
+Generate searchKeywords for taxonomy lookup after understanding the user's intent.
 The user may say "audience", "segment", or "signals"; treat those as targeting signals.
 
 Return valid JSON only.
 
 Rules:
 - Do not invent taxonomy IDs.
-- Extract keywords that can be used to search taxonomy data.
+- searchKeywords are the bridge to taxonomy lookup. They must be concise targeting concepts, not a copy of the whole sentence.
+- If mode is REFINE, prioritize the latest request and signalsToAdd. Use currentBrief/currentSignals only as context for what already exists.
+- If mode is REFINE and the user asks for a new concept like "car lovers" or "food lovers", searchKeywords must focus on that new concept, not the old audience.
+- If mode is REFINE and the user says "more" or "same category" without a new concept, use currentSignals/currentBrief to infer similar taxonomy concepts.
 - For cars, include keywords such as automotive, cars, vehicle, SUV, dealership, auto.
+- For food lovers, include keywords such as food, dining, restaurants, grocery, supermarket, coffee, organic.
 - For fitness, include keywords such as fitness, gym, exercise, running, hiking, yoga.
 - Flag sensitive targeting requests involving religion, ethnicity, race, health condition, sexual orientation, disability, or political affiliation.
 `,
@@ -341,6 +386,7 @@ Rules:
         role: "user",
         content: JSON.stringify({
           request: message,
+          context,
           requiredShape: {
             ageRange: { min: "number|null", max: "number|null" },
             demographics: ["string"],
@@ -353,6 +399,8 @@ Rules:
             safeAlternative: "string|null",
             clarificationNeeded: "boolean",
             clarificationQuestion: "string|null",
+            requestedSignalCount: "number|null",
+            searchKeywords: ["concise taxonomy lookup terms"],
           },
         }),
       },
@@ -382,6 +430,11 @@ function candidateToRecommendedSignal(
     confidence: Number(confidence.toFixed(2)),
     rationale: `${sourceLabel} match from the provided taxonomy that aligns with the requested audience behavior or attribute.`,
   };
+}
+
+function truncateForPrompt(value: string | null | undefined, maxLength = 160) {
+  const cleaned = cleanDisplayText(value);
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 3)}...` : cleaned;
 }
 
 function fallbackRecommendation(
@@ -429,18 +482,18 @@ async function recommendAudience(
 ) {
   const fallback = fallbackRecommendation(message, intent, candidates);
 
-  const candidatePayload = candidates.slice(0, 80).map((candidate) => ({
+  const candidatePayload = candidates.slice(0, 24).map((candidate) => ({
     id: candidate.id,
     source: candidate.source,
-    name: cleanDisplayText(candidate.name),
-    path: candidate.path ? cleanDisplayText(candidate.path) : null,
+    name: truncateForPrompt(candidate.name, 100),
+    path: candidate.path ? truncateForPrompt(candidate.path, 140) : null,
     description: candidate.description
-      ? cleanDisplayText(candidate.description)
+      ? truncateForPrompt(candidate.description, 120)
       : null,
     score: candidate.score,
   }));
 
-  const recommendation = await generateStructuredJson<AudienceRecommendation>({
+  const recommendation = await generateJson<AudienceRecommendation>({
     label: "audience-recommendation",
     schema: AudienceRecommendationSchema,
     fallback,
@@ -491,8 +544,7 @@ Critical rules:
       },
     ],
   });
-  // const recommendation = fallback;
-  
+
   const candidateById = new Map(
     candidatePayload.map((candidate) => [candidate.id, candidate]),
   );
@@ -504,11 +556,28 @@ Critical rules:
     .filter((signal) => !isSensitiveText(`${signal.name} ${signal.path ?? ""}`))
     .slice(0, maxSignals);
 
+  const selectedIds = new Set(safeSignals.map((signal) => signal.id));
+  const supplementalSignals = candidates
+    .filter((candidate) => !selectedIds.has(candidate.id))
+    .filter(
+      (candidate) =>
+        !isSensitiveText(`${candidate.name} ${candidate.path ?? ""}`),
+    )
+    .slice(0, Math.max(0, maxSignals - safeSignals.length))
+    .map((candidate, index) =>
+      candidateToRecommendedSignal(candidate, safeSignals.length + index),
+    );
+
+  const finalSignals = [...safeSignals, ...supplementalSignals].slice(
+    0,
+    maxSignals,
+  );
+
   return {
     ...resolved,
     recommendedSignals:
-      safeSignals.length > 0
-        ? safeSignals
+      finalSignals.length > 0
+        ? finalSignals
         : fallback.recommendedSignals.slice(0, maxSignals),
   };
 }
@@ -662,10 +731,12 @@ function formatLowConfidenceRemovalMessage({
 }
 
 function formatEstimateMessage(estimate: AudienceEstimate, approved: boolean) {
-  const status = approved ? "Approved" : "Estimated";
+  const header = approved
+    ? `Approved. Estimated reachable audience: ${estimate.estimatedMin.toLocaleString()} - ${estimate.estimatedMax.toLocaleString()}.`
+    : `Preview reach (audience is still in draft): ${estimate.estimatedMin.toLocaleString()} - ${estimate.estimatedMax.toLocaleString()}. Approve the audience to lock the estimate.`;
 
   return [
-    `${status}. Estimated reachable audience: ${estimate.estimatedMin.toLocaleString()} - ${estimate.estimatedMax.toLocaleString()}.`,
+    header,
     `Confidence: ${Math.round(estimate.confidence * 100)}%.`,
     estimate.methodology,
   ].join("\n");
@@ -674,6 +745,59 @@ function formatEstimateMessage(estimate: AudienceEstimate, approved: boolean) {
 function parseRemoveTerm(message: string) {
   const match = message.match(removePattern);
   return match?.[1]?.replace(/[.!?]$/, "").trim() ?? null;
+}
+
+const removeTermStopWords = new Set([
+  "a",
+  "an",
+  "the",
+  "this",
+  "that",
+  "my",
+  "current",
+  "from",
+  "signal",
+  "signals",
+  "audience",
+  "audiences",
+  "segment",
+  "segments",
+  "target",
+  "targets",
+]);
+
+/** Turns "Hiking signal" / "audience Hiking" into searchable terms like "hiking". */
+function normalizeRemoveSearchTerms(term: string) {
+  const cleaned = term.trim().toLowerCase().replace(/[.!?]+$/, "");
+  const tokens = cleaned
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !removeTermStopWords.has(token));
+
+  const variants = new Set<string>();
+  if (tokens.length > 0) {
+    variants.add(tokens.join(" "));
+    for (const token of tokens) {
+      variants.add(token);
+    }
+  } else if (cleaned.length > 0) {
+    variants.add(cleaned);
+  }
+
+  return [...variants];
+}
+
+function signalMatchesRemoveTerms(
+  signal: RecommendedSignal,
+  removeTerms: string[],
+) {
+  const haystack = `${signal.name} ${signal.path ?? ""}`.toLowerCase();
+
+  return removeTerms.some((term) =>
+    normalizeRemoveSearchTerms(term).some((variant) =>
+      haystack.includes(variant),
+    ),
+  );
 }
 
 function fallbackAgentDecision(
@@ -762,7 +886,7 @@ function fallbackAgentDecision(
 
   if (
     hasExistingPlan &&
-    /\b(add|include|more|same category|broader|narrower|focus|remove|exclude|premium|luxury|fitness|running|travel|auto|car|cars|parents|grocery|coffee)\b/.test(
+    /\b(add|include|also|as well|along with|plus|more|same category|broader|narrower|focus|remove|exclude|premium|luxury|fitness|running|travel|auto|car|cars|parents|grocery|coffee)\b/.test(
       lower,
     )
   ) {
@@ -771,6 +895,19 @@ function fallbackAgentDecision(
       assistantReply:
         "I will refine the current draft audience using taxonomy-backed signals.",
       audienceRequest: message,
+      signalsToAdd: [],
+      signalsToRemove: [],
+      shouldEstimate: false,
+      shouldApprove: false,
+    };
+  }
+
+  if (!hasExistingPlan && isVagueAudienceBrief(message)) {
+    return {
+      action: "ASK_CLARIFICATION",
+      assistantReply:
+        "Sure — who do you want to reach? Describe the audience in a sentence or two. For example: \"fitness enthusiasts aged 25-44 with premium shopping habits\", \"parents of toddlers who shop at Whole Foods\", or \"luxury car shoppers in California\".",
+      audienceRequest: null,
       signalsToAdd: [],
       signalsToRemove: [],
       shouldEstimate: false,
@@ -810,7 +947,17 @@ function fallbackAgentDecision(
   };
 }
 
-async function decideNextAgentAction({
+type ResolvedAgentDecision = {
+  decision: AgentDecision;
+  source: "llm" | "fallback";
+};
+
+/**
+ * LLM chooses the next action from conversation + plan context.
+ * Deterministic rules in fallbackAgentDecision run only when the LLM call
+ * fails (no API key, invalid JSON, schema validation error, rate limit, etc.).
+ */
+async function resolveAgentDecision({
   message,
   existingPlan,
   history,
@@ -818,62 +965,113 @@ async function decideNextAgentAction({
   message: string;
   existingPlan: unknown;
   history: Array<{ role: string; content: string }>;
-}) {
-  const fallback = fallbackAgentDecision(message, Boolean(existingPlan));
-//   return fallback;
-// }
+}): Promise<ResolvedAgentDecision> {
+  const hasExistingPlan = Boolean(existingPlan);
+  const fallback = fallbackAgentDecision(message, hasExistingPlan);
+  const decisionContext: AgentDecisionContext = { hasExistingPlan };
 
-  return generateStructuredJson<AgentDecision>({
+  const llmDecision = await generateJson<AgentDecision>({
     label: "agent-decision",
     schema: AgentDecisionSchema,
-    fallback,
+    decisionContext,
     messages: [
       {
         role: "system",
         content: `
 You are a conversational advertising audience planning assistant.
 
-You can answer normal questions, explain targeting choices, and also build, refine, approve, and estimate advertising audiences.
-
+Your job is to read the planner's latest message and choose exactly one action.
 Return valid JSON only.
 
-Rules:
-- If the user is asking a general question, use GENERAL_REPLY.
-- If the user describes a target audience and no plan exists, use BUILD_AUDIENCE.
-- If there is an existing plan and the user asks to add, include, remove, broaden, narrow, focus, or add more signals, use REFINE_AUDIENCE or REMOVE_SIGNAL.
-- If the user says "add more", "add 5 more", "same category", or similar, use REFINE_AUDIENCE and do not replace the existing audience.
-- If the user asks for approval, use APPROVE_AUDIENCE.
-- If the user asks for estimate, use ESTIMATE_AUDIENCE.
+Action selection (follow strictly):
+- GENERAL_REPLY: greetings, thanks, or questions that do not change the draft.
+- BUILD_AUDIENCE: only when hasExistingPlan is false and the user describes a new target audience.
+- REFINE_AUDIENCE: when hasExistingPlan is true and the user wants to add, include, broaden, narrow, or extend the current draft. This includes phrases like "add", "also", "as well", "along with", "plus", "include", or "more".
+- REMOVE_SIGNAL: user wants to drop signals from the current draft.
+- ADD_SIGNAL: optional synonym for adding signals when hasExistingPlan is true; prefer REFINE_AUDIENCE.
+- APPROVE_AUDIENCE: user confirms or approves the draft.
+- ESTIMATE_AUDIENCE: user asks for reach/size estimate without approving.
+- ASK_CLARIFICATION: the request is too vague to act on.
+
+Critical:
+- When hasExistingPlan is true, do NOT use BUILD_AUDIENCE unless the user explicitly asks to start over, replace everything, reset, or create a brand-new audience from scratch.
+- When hasExistingPlan is true and the user adds a new segment (e.g. "add car lovers as well"), use REFINE_AUDIENCE so existing selected signals are kept.
+- When hasExistingPlan is false and the user message has no concrete targeting concept (e.g. "build me an audience", "create a segment", "give me signals"), use ASK_CLARIFICATION and ask who they want to reach. Do NOT use BUILD_AUDIENCE for empty or vague briefs.
+- audienceRequest should capture what to build or refine; use the latest user message text.
+- signalsToAdd / signalsToRemove: keyword hints from the user message (arrays, may be empty).
+- assistantReply: short action statement (not a question) for BUILD_AUDIENCE and REFINE_AUDIENCE. For ASK_CLARIFICATION, assistantReply must be a friendly question asking for concrete targeting details (behavior, interest, location, purchase, age, or demographic).
 
 Output requirements:
-- audienceRequest MUST always be a plain string or null.
-- signalsToAdd MUST always be an array.
-- signalsToRemove MUST always be an array.
-- Never return null arrays.
-- Never return objects for audienceRequest.
+- action is required.
+- audienceRequest: plain string or null.
+- signalsToAdd and signalsToRemove: arrays (never null).
+- shouldEstimate and shouldApprove: booleans.
 `,
       },
       {
         role: "user",
         content: JSON.stringify({
           latestUserMessage: message,
-          hasExistingPlan: Boolean(existingPlan),
+          hasExistingPlan,
           currentPlan: existingPlan,
           recentConversation: history.slice(-12),
+          examples: [
+            {
+              hasExistingPlan: false,
+              message: "fitness enthusiasts aged 25-44 with premium shopping habits",
+              action: "BUILD_AUDIENCE",
+            },
+            {
+              hasExistingPlan: false,
+              message: "build me an audience",
+              action: "ASK_CLARIFICATION",
+              assistantReply:
+                "Sure — who do you want to reach? Tell me a behavior, interest, location, purchase, or demographic to target.",
+            },
+            {
+              hasExistingPlan: false,
+              message: "create a segment",
+              action: "ASK_CLARIFICATION",
+            },
+            {
+              hasExistingPlan: true,
+              message: "add car lover audience as well",
+              action: "REFINE_AUDIENCE",
+            },
+          ],
           outputShape: {
             action:
               "GENERAL_REPLY|BUILD_AUDIENCE|REFINE_AUDIENCE|REMOVE_SIGNAL|ADD_SIGNAL|APPROVE_AUDIENCE|ESTIMATE_AUDIENCE|ASK_CLARIFICATION",
-            assistantReply: "natural conversational response to show user",
-            audienceRequest: "audience request to build/refine from, or null",
-            signalsToAdd: ["signal keywords to add"],
-            signalsToRemove: ["signal keywords to remove"],
-            shouldEstimate: "boolean",
-            shouldApprove: "boolean",
+            assistantReply: "string",
+            audienceRequest: "string|null",
+            signalsToAdd: ["string"],
+            signalsToRemove: ["string"],
+            shouldEstimate: false,
+            shouldApprove: false,
           },
         }),
       },
     ],
   });
+
+  if (llmDecision) {
+    return { decision: llmDecision, source: "llm" };
+  }
+
+  console.warn(
+    `[agent-decision] LLM did not return a valid decision; using deterministic fallback (action=${fallback.action}).`,
+  );
+  return { decision: fallback, source: "fallback" };
+}
+
+function isAudienceRefinementAction(
+  action: AgentDecision["action"],
+  hasExistingPlan: boolean,
+) {
+  return (
+    hasExistingPlan &&
+    (action === "REFINE_AUDIENCE" || action === "ADD_SIGNAL")
+  );
 }
 
 async function loadPlan(conversationId: string) {
@@ -947,37 +1145,162 @@ function filterSignalsByRemoveTerms({
     return signals;
   }
 
-  return signals.filter((signal) => {
-    const text = `${signal.name} ${signal.path ?? ""}`.toLowerCase();
-    return !removeTerms.some((term) => text.includes(term.toLowerCase()));
-  });
+  return signals.filter((signal) => !signalMatchesRemoveTerms(signal, removeTerms));
 }
 
 function supplementalSignalsFromCandidates({
   candidates,
   selectedSignals,
   neededCount,
+  blockedIds,
+  focusTerms,
 }: {
   candidates: RankedTaxonomySignal[];
   selectedSignals: RecommendedSignal[];
   neededCount: number;
+  blockedIds?: Set<string>;
+  focusTerms?: string[];
 }) {
   if (neededCount <= 0) {
     return [];
   }
 
   const selectedIds = new Set(selectedSignals.map((signal) => signal.id));
+  const blocked = blockedIds ?? new Set<string>();
+  const terms = (focusTerms ?? []).map((term) => term.toLowerCase());
 
-  return candidates
+  const filtered = candidates
     .filter((candidate) => !selectedIds.has(candidate.id))
+    .filter((candidate) => !blocked.has(candidate.id))
     .filter(
       (candidate) =>
         !isSensitiveText(`${candidate.name} ${candidate.path ?? ""}`),
-    )
+    );
+
+  const byFocusTerms =
+    terms.length > 0
+      ? filtered.filter((candidate) => {
+          const text =
+            `${candidate.name} ${candidate.path ?? ""} ${candidate.description ?? ""}`.toLowerCase();
+          return terms.some((term) => text.includes(term));
+        })
+      : filtered;
+
+  return (terms.length > 0 ? byFocusTerms : filtered)
     .slice(0, neededCount)
     .map((candidate, index) =>
       candidateToRecommendedSignal(candidate, selectedSignals.length + index),
     );
+}
+
+function extractFocusTerms(message: string) {
+  const lower = message.toLowerCase();
+  const terms = lower
+    .split(/[^a-z0-9]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 2);
+
+  const stopWords = new Set([
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "that",
+    "this",
+    "those",
+    "these",
+    "audience",
+    "audiences",
+    "signal",
+    "signals",
+    "segment",
+    "segments",
+    "target",
+    "targets",
+    "add",
+    "more",
+    "also",
+    "related",
+    "about",
+    "lover",
+    "lovers",
+  ]);
+
+  const baseTerms = terms.filter((term) => !stopWords.has(term));
+  const expanded = new Set(baseTerms);
+
+  if (baseTerms.some((term) => ["car", "cars", "auto", "automotive", "vehicle"].includes(term))) {
+    ["car", "cars", "auto", "automotive", "vehicle", "suv", "dealership"].forEach((term) =>
+      expanded.add(term),
+    );
+  }
+  if (baseTerms.some((term) => ["food", "foods", "dining", "restaurant", "grocery"].includes(term))) {
+    [
+      "food",
+      "dining",
+      "restaurant",
+      "restaurants",
+      "grocery",
+      "groceries",
+      "supermarket",
+      "coffee",
+      "cafe",
+      "organic",
+      "culinary",
+    ].forEach((term) => expanded.add(term));
+  }
+  if (baseTerms.some((term) => ["fitness", "gym", "exercise", "running"].includes(term))) {
+    ["fitness", "gym", "exercise", "running", "sports"].forEach((term) =>
+      expanded.add(term),
+    );
+  }
+
+  return [...expanded].slice(0, 20);
+}
+
+function candidateMatchesFocusTerms(
+  candidate: RankedTaxonomySignal,
+  focusTerms: string[],
+) {
+  if (focusTerms.length === 0) return true;
+  const text =
+    `${candidate.name} ${candidate.path ?? ""} ${candidate.description ?? ""}`.toLowerCase();
+  return focusTerms.some((term) => text.includes(term.toLowerCase()));
+}
+
+function findRecentlyRemovedSignalIds(
+  messages: Array<{
+    role: MessageRole | string;
+    metadata: unknown;
+  }>,
+) {
+  const ids = new Set<string>();
+  const recentAssistantMessages = [...messages]
+    .reverse()
+    .filter((item) => item.role === MessageRole.ASSISTANT)
+    .slice(0, 12);
+
+  for (const message of recentAssistantMessages) {
+    if (!isRecord(message.metadata)) continue;
+
+    const removedSignalId =
+      typeof message.metadata.removedSignalId === "string"
+        ? message.metadata.removedSignalId
+        : null;
+    if (removedSignalId) {
+      ids.add(removedSignalId);
+    }
+
+    const removedSignalIds = Array.isArray(message.metadata.removedSignalIds)
+      ? message.metadata.removedSignalIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [];
+    removedSignalIds.forEach((id) => ids.add(id));
+  }
+
+  return ids;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1074,7 +1397,7 @@ export async function approveAudiencePlan(
   const plan = await loadPlan(conversationId);
   const selectedSignals = jsonSignals(plan);
   const intent = jsonIntent(plan);
-  const estimate = estimateAudienceSize({ selectedSignals, intent });
+  const estimate = await estimateAudienceSize({ selectedSignals, intent });
 
   await prisma.audiencePlan.update({
     where: { conversationId },
@@ -1143,72 +1466,26 @@ export async function removeSignalFromPlan(
   });
 }
 
-export async function addSignalToPlan(
-  conversationId: string,
-  signalId: string,
-) {
-  const plan = await loadPlan(conversationId);
-  const selectedSignals = jsonSignals(plan);
-
-  if (selectedSignals.some((signal) => signal.id === signalId)) {
-    return;
-  }
-
-  const candidate = await prisma.taxonomySignal.findUnique({
-    where: { id: signalId },
-  });
-
-  if (!candidate) {
-    throw new HttpError(404, "Taxonomy signal not found");
-  }
-
-  const signal = candidateToRecommendedSignal(
-    { ...candidate, score: 5 },
-    selectedSignals.length,
-  );
-
-  const nextSignals = [...selectedSignals, signal];
-
-  await prisma.audiencePlan.update({
-    where: { conversationId },
-    data: {
-      selectedSignals: nextSignals,
-      status: AudienceStatus.DRAFT,
-      estimatedMin: null,
-      estimatedMax: null,
-      confidence: null,
-      estimate: Prisma.JsonNull,
-    },
-  });
-
-  await prisma.message.create({
-    data: {
-      conversationId,
-      role: MessageRole.ASSISTANT,
-      content: `Added "${signal.name}" to the draft audience.`,
-      metadata: { addedSignalId: signalId },
-    },
-  });
-}
-
 async function removeSignalByText(conversationId: string, term: string) {
   const plan = await loadPlan(conversationId);
   const selectedSignals = jsonSignals(plan);
-  const normalizedTerm = term.toLowerCase();
+  const removeTerms = [term];
 
+  const removedSignals = selectedSignals.filter((signal) =>
+    signalMatchesRemoveTerms(signal, removeTerms),
+  );
   const nextSignals = selectedSignals.filter(
-    (signal) =>
-      !`${signal.name} ${signal.path ?? ""}`
-        .toLowerCase()
-        .includes(normalizedTerm),
+    (signal) => !signalMatchesRemoveTerms(signal, removeTerms),
   );
 
-  if (nextSignals.length === selectedSignals.length) {
+  if (removedSignals.length === 0) {
+    const hint =
+      normalizeRemoveSearchTerms(term).join(", ") || term.toLowerCase();
     await prisma.message.create({
       data: {
         conversationId,
         role: MessageRole.ASSISTANT,
-        content: `I could not find a selected signal matching "${term}". You can remove a signal from the panel or say the exact signal name.`,
+        content: `I could not find a selected signal matching "${term}". Try the signal name only (e.g. "remove ${hint}"), or remove it from the panel on the right.`,
       },
     });
     return;
@@ -1226,11 +1503,18 @@ async function removeSignalByText(conversationId: string, term: string) {
     },
   });
 
+  const removedNames = removedSignals.map((signal) => signal.name).join(", ");
   await prisma.message.create({
     data: {
       conversationId,
       role: MessageRole.ASSISTANT,
-      content: `Removed signals matching "${term}". The draft now has ${nextSignals.length} selected signal${nextSignals.length === 1 ? "" : "s"}.`,
+      content:
+        removedSignals.length === 1
+          ? `Removed "${removedNames}" from the draft audience. The draft now has ${nextSignals.length} selected signal${nextSignals.length === 1 ? "" : "s"}.`
+          : `Removed ${removedSignals.length} signals (${removedNames}). The draft now has ${nextSignals.length} selected signal${nextSignals.length === 1 ? "" : "s"}.`,
+      metadata: {
+        removedSignalIds: removedSignals.map((signal) => signal.id),
+      },
     },
   });
 }
@@ -1240,7 +1524,6 @@ export async function handlePlannerMessage(
   rawMessage: string,
 ) {
   const message = cleanPlannerMessage(rawMessage);
-  
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
@@ -1300,6 +1583,37 @@ export async function handlePlannerMessage(
     return;
   }
 
+  if (isSensitiveText(message)) {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content: sensitiveRequestMessage(),
+        metadata: {
+          action: "SENSITIVE_REQUEST_BLOCKED",
+          source: "pre-llm-guard",
+        },
+      },
+    });
+    return;
+  }
+
+  if (!existingPlan && isVagueAudienceBrief(message)) {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content:
+          "Sure — who do you want to reach? Describe the audience in a sentence or two. For example: \"fitness enthusiasts aged 25-44 with premium shopping habits\", \"parents of toddlers who shop at Whole Foods\", or \"luxury car shoppers in California\".",
+        metadata: {
+          action: "ASK_CLARIFICATION",
+          reason: "vague-brief",
+        },
+      },
+    });
+    return;
+  }
+
   if (existingPlan && isLowConfidenceReviewRequest(message)) {
     const threshold = confidenceThresholdFromMessage(message);
     const selectedSignals = jsonSignals(existingPlan);
@@ -1333,15 +1647,14 @@ export async function handlePlannerMessage(
     return;
   }
 
-  const decision =
-  (await decideNextAgentAction({
+  const { decision, source: decisionSource } = await resolveAgentDecision({
     message,
     existingPlan,
     history: conversation.messages.map((item) => ({
       role: item.role,
       content: item.content,
     })),
-  })) ?? fallbackAgentDecision(message, Boolean(existingPlan));
+  });
 
   if (
     decision.action === "GENERAL_REPLY" ||
@@ -1352,7 +1665,7 @@ export async function handlePlannerMessage(
         conversationId,
         role: MessageRole.ASSISTANT,
         content: decision.assistantReply,
-        metadata: { decision },
+        metadata: { decision, decisionSource },
       },
     });
     return;
@@ -1396,15 +1709,22 @@ export async function handlePlannerMessage(
     decision.audienceRequest,
     message,
   );
+  const isRefinement = isAudienceRefinementAction(
+    decision.action,
+    Boolean(existingPlan),
+  );
+  const recentlyRemovedSignalIds = findRecentlyRemovedSignalIds(
+    conversation.messages,
+  );
 
   let audienceRequest = normalizedDecisionRequest;
 
-  if (existingPlan && decision.action === "REFINE_AUDIENCE") {
+  if (isRefinement && existingPlan) {
     const currentIntent = jsonIntent(existingPlan);
     const currentSignals = jsonSignals(existingPlan).map(
       (signal) => signal.name,
     );
-    const addCount = requestedAdditionalSignalCount(message);
+    const addCount = requestedSignalCountFromMessage(normalizedDecisionRequest);
 
     audienceRequest = [
       `Original brief: ${existingPlan.brief}`,
@@ -1429,14 +1749,33 @@ export async function handlePlannerMessage(
       .join("\n");
   }
 
-  const intent =
-    (await extractAudienceIntent(audienceRequest)) ??
-    fallbackIntentFromMessage(audienceRequest);
+  const focusTerms = isRefinement
+    ? extractFocusTerms(
+        [normalizedDecisionRequest, ...decision.signalsToAdd].join(" "),
+      )
+    : [];
 
-  const keywords = [
-    ...keywordsFromIntent(intent, audienceRequest),
-    ...(Array.isArray(intent.searchKeywords) ? intent.searchKeywords : []),
-  ];
+  const intentSourceText = isRefinement ? normalizedDecisionRequest : audienceRequest;
+  const currentSignalsForContext =
+    existingPlan && isRefinement
+      ? jsonSignals(existingPlan).map((signal) => signal.name)
+      : [];
+  const intent =
+    (await extractAudienceIntent(intentSourceText, {
+      mode: isRefinement ? "REFINE" : "BUILD",
+      currentBrief: existingPlan?.brief ?? null,
+      currentSignals: currentSignalsForContext,
+      signalsToAdd: decision.signalsToAdd,
+      signalsToRemove: removeTerms,
+    })) ?? fallbackIntentFromMessage(intentSourceText);
+
+  const llmSearchKeywords = Array.isArray(intent.searchKeywords)
+    ? intent.searchKeywords.filter((keyword) => keyword.trim().length > 1)
+    : [];
+  const keywords =
+    llmSearchKeywords.length > 0
+      ? llmSearchKeywords
+      : keywordsFromIntent(intent, intentSourceText);
 
   if (intent.sensitiveRequest) {
     const content = intent.safeAlternative ?? sensitiveRequestMessage();
@@ -1446,19 +1785,39 @@ export async function handlePlannerMessage(
         conversationId,
         role: MessageRole.ASSISTANT,
         content,
-        metadata: { intent, decision },
+        metadata: { intent, decision, decisionSource },
       },
     });
     return;
   }
 
-  const candidates = await searchTaxonomyByKeywords(keywords);
+  const searchKeywords = keywords;
+  const baseCandidates = await searchTaxonomyByKeywords(searchKeywords);
+  const taxonomyFocusTerms = isRefinement ? keywords : focusTerms;
+  const filteredCandidates = baseCandidates
+    .filter((candidate) => !recentlyRemovedSignalIds.has(candidate.id))
+    .filter((candidate) => candidateMatchesFocusTerms(candidate, taxonomyFocusTerms));
+  const candidates =
+    isRefinement && filteredCandidates.length > 0
+      ? filteredCandidates
+      : baseCandidates.filter(
+          (candidate) => !recentlyRemovedSignalIds.has(candidate.id),
+        );
 
   const existingSignals = existingPlan ? jsonSignals(existingPlan) : [];
-  const addCount = existingPlan ? requestedAdditionalSignalCount(message) : null;
+  const requestedCount = Math.max(
+    1,
+    Math.min(
+      Number(requestedSignalCountFromMessage(message) ?? intent.requestedSignalCount ?? 5),
+      20,
+    ),
+  );
+  const addCount = existingPlan
+    ? requestedSignalCountFromMessage(normalizedDecisionRequest)
+    : null;
 
   const maxSignalsToAskFor =
-    existingPlan && addCount ? existingSignals.length + addCount + 5 : 8;
+    existingPlan && addCount ? existingSignals.length + addCount + 5 : requestedCount;
 
   const recommendation = await recommendAudience(
     audienceRequest,
@@ -1479,10 +1838,6 @@ export async function handlePlannerMessage(
         ? recommendedSignalsAfterRemoveTerms
         : recommendation.recommendedSignals,
   };
-
-  const isRefinement = Boolean(
-    existingPlan && decision.action === "REFINE_AUDIENCE",
-  );
 
   const existingSignalsAfterRemoveTerms = filterSignalsByRemoveTerms({
     signals: existingSignals,
@@ -1507,6 +1862,8 @@ export async function handlePlannerMessage(
         candidates,
         selectedSignals,
         neededCount: addCount - addedSignals.length,
+        blockedIds: recentlyRemovedSignalIds,
+        focusTerms: taxonomyFocusTerms,
       });
 
       addedSignals = [...addedSignals, ...supplementalSignals];
@@ -1516,8 +1873,8 @@ export async function handlePlannerMessage(
       ]);
     }
   } else {
-    addedSignals = finalRecommendation.recommendedSignals;
-    selectedSignals = finalRecommendation.recommendedSignals;
+    addedSignals = finalRecommendation.recommendedSignals.slice(0, requestedCount);
+    selectedSignals = finalRecommendation.recommendedSignals.slice(0, requestedCount);
   }
 
   await prisma.audiencePlan.upsert({
@@ -1582,6 +1939,7 @@ export async function handlePlannerMessage(
         },
         addedSignals,
         decision,
+        decisionSource,
         candidateCount: candidates.length,
       },
     },

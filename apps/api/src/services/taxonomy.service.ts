@@ -24,6 +24,36 @@ const synonymMap: Record<string, string[]> = {
   home: ["home", "furniture", "home improvement", "real estate", "moving"],
 };
 
+const stopWords = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "those",
+  "these",
+  "into",
+  "your",
+  "you",
+  "aged",
+  "age",
+  "audience",
+  "audiences",
+  "signal",
+  "signals",
+  "segment",
+  "segments",
+  "target",
+  "targets",
+  "show",
+  "suggest",
+  "recommend",
+  "add",
+  "more",
+]);
+
 export function cleanDisplayText(value: string | null | undefined) {
   return (value ?? "")
     .replace(/_/g, " ")
@@ -112,8 +142,18 @@ export async function searchTaxonomyByKeywords(keywords: string[], limit = 60) {
     return [];
   }
 
+  const tokenTerms = uniqueKeywords
+    .flatMap((keyword) => keyword.split(/\s+/))
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+
+  const searchTerms = [...new Set([...uniqueKeywords, ...tokenTerms])].slice(
+    0,
+    40,
+  );
+
   const where = {
-    OR: uniqueKeywords.flatMap((keyword) => [
+    OR: searchTerms.flatMap((keyword) => [
       { name: { contains: keyword, mode: "insensitive" as const } },
       { description: { contains: keyword, mode: "insensitive" as const } },
       { path: { contains: keyword, mode: "insensitive" as const } },
@@ -128,22 +168,29 @@ export async function searchTaxonomyByKeywords(keywords: string[], limit = 60) {
 
   const rows = await prisma.taxonomySignal.findMany({
     where: where as any,
-    take: 300,
+    take: 600,
   });
 
-  return (rows as TaxonomySignal[])
-    .filter((row: TaxonomySignal) => !isSensitiveText([row.name, row.description, row.path].filter(Boolean).join(" ")))
-    .map((row: TaxonomySignal) => ({ ...row, score: scoreSignal(row, uniqueKeywords) }))
+  const fallbackRows =
+    rows.length >= Math.max(limit, 40)
+      ? []
+      : await prisma.taxonomySignal.findMany({ take: 2500 });
+
+  const mergedRows = [...rows, ...fallbackRows];
+  const byId = new Map<string, TaxonomySignal>();
+  for (const row of mergedRows) {
+    if (!byId.has(row.id)) {
+      byId.set(row.id, row);
+    }
+  }
+
+  return [...byId.values()]
+    .filter(
+      (row: TaxonomySignal) =>
+        !isSensitiveText([row.name, row.description, row.path].filter(Boolean).join(" ")),
+    )
+    .map((row: TaxonomySignal) => ({ ...row, score: scoreSignal(row, searchTerms) }))
     .filter((row: RankedTaxonomySignal) => row.score > 0)
     .sort((a: RankedTaxonomySignal, b: RankedTaxonomySignal) => b.score - a.score)
     .slice(0, limit);
-}
-
-export async function searchTaxonomyFreeText(query: string, limit = 50) {
-  const keywords = query
-    .split(/\s+|,|\//)
-    .map((value) => value.trim())
-    .filter((value) => value.length > 1);
-
-  return searchTaxonomyByKeywords(keywords, limit);
 }

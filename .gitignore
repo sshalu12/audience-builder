@@ -8,4 +8,5 @@ build
 coverage
 .prisma
 *.log
+*.tsbuildinfo
 apps/api/generated

@@ -3,7 +3,6 @@ import { MessageRole, Role } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getAuthUser, requireAuth } from "../middleware/auth.js";
 import {
-  addSignalToPlan,
   approveAudiencePlan,
   handlePlannerMessage,
   removeSignalFromPlan,
@@ -154,24 +153,6 @@ conversationRouter.post(
     }
 
     await removeSignalFromPlan(conversationId, signalId);
-    const conversation = await loadConversation(conversationId);
-    res.json({ conversation });
-  })
-);
-
-conversationRouter.post(
-  "/:id/signals/add",
-  asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const conversationId = paramString(req.params.id);
-    await assertConversationAccess(conversationId, user);
-    const { signalId } = req.body as { signalId?: string };
-
-    if (!signalId) {
-      throw new HttpError(400, "signalId is required");
-    }
-
-    await addSignalToPlan(conversationId, signalId);
     const conversation = await loadConversation(conversationId);
     res.json({ conversation });
   })
