@@ -14,6 +14,15 @@
     "prisma:migrate": "npm run prisma:migrate -w apps/api",
     "prisma:generate": "npm run prisma:generate -w apps/api"
   },
+  "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.19.19",
+    "prisma": "^6.19.3",
+    "typescript": "^5.7.2"
+  },
   "devDependencies": {
     "concurrently": "^9.1.0"
   },
