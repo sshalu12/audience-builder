@@ -26,20 +26,25 @@ import {
   type RankedTaxonomySignal,
 } from "./taxonomy.service.js";
 
-const approvalPattern =
-  /\b(approve|approved|confirm|confirmed|looks good|ship it)\b/i;
-
-const estimatePattern = /\b(estimate|size|reachable|reach)\b/i;
-
-const removePattern = /\bremove\s+(.+)$/i;
-
 const defaultLowConfidenceThreshold = 0.75;
 
+/**
+ * Converts a planner's raw message into a short conversation title.
+ * If the message is longer than 70 characters it is truncated to 67 chars and
+ * "..." is appended so the title fits in a single line in the UI.
+ */
 function titleFromMessage(message: string) {
   const cleaned = message.replace(/\s+/g, " ").trim();
   return cleaned.length > 70 ? `${cleaned.slice(0, 67)}...` : cleaned;
 }
 
+/**
+ * Strips assistant-style boilerplate from a message before processing it.
+ * This handles the edge case where a planner accidentally pastes a previous
+ * AI reply back into the chat. It detects known assistant marker phrases and,
+ * if found, extracts only the last action-intent line (e.g. "estimate",
+ * "approve") rather than treating the full pasted block as a new request.
+ */
 function cleanPlannerMessage(message: string) {
   const assistantMarkers = [
     "I created a draft audience:",
@@ -73,6 +78,13 @@ function cleanPlannerMessage(message: string) {
   return lastIntent ?? message.trim();
 }
 
+/**
+ * Coerces the `audienceRequest` field from the LLM's agent-decision response
+ * into a plain string. The LLM sometimes returns an object like
+ * { text: "..." } or { request: "..." } instead of a bare string.
+ * Falls back to the original planner message if the value is empty or
+ * cannot be resolved to a string.
+ */
 function normalizeAudienceRequest(value: unknown, fallback: string) {
   if (!value) return fallback;
 
@@ -99,6 +111,13 @@ function normalizeAudienceRequest(value: unknown, fallback: string) {
   return fallback;
 }
 
+/**
+ * Parses phrases like "give me 5 more signals" or "add three additional
+ * audiences" from the planner's message and returns the numeric count.
+ * Supports digit forms ("5") and word forms ("five"). Returns null if no
+ * explicit count is found, or 3 when the planner just says "add more"
+ * without a specific number. Clamps the result to the range 1–20.
+ */
 function requestedSignalCountFromMessage(message: string) {
   const lower = message.toLowerCase();
 
@@ -151,74 +170,36 @@ function requestedSignalCountFromMessage(message: string) {
   return null;
 }
 
-function isListSelectedSignalsRequest(message: string) {
-  const lower = message.toLowerCase();
-
-  return (
-    /\b(show|list|display|retrieve|get|see|view)\b.*\b(all|current|selected|added)\b.*\b(audiences?|signals?|segments?|targets?)\b/.test(lower) ||
-    /\bwhat\b.*\b(audiences?|signals?|segments?|targets?)\b.*\b(added|selected|current)\b/.test(lower) ||
-    /\bwhich\b.*\b(audiences?|signals?|segments?|targets?)\b.*\b(selected|added|current)\b/.test(lower) ||
-    /\bwhat have i added\b/.test(lower)
-  );
-}
-
-function isLowConfidenceReviewRequest(message: string) {
-  const lower = message.toLowerCase();
-
-  return (
-    /\b(low confidence|low-confidence|weak confidence|weak signals|lowest confidence|poor confidence)\b/.test(
-      lower,
-    ) &&
-    /\b(remove|delete|drop|clean|clean up|review|find|show|which)\b/.test(lower)
-  );
-}
-
-// True if the planner's first message has no concrete targeting concept
-// (no behavior, interest, location, purchase, age range, or demographic noun).
-// Used to prompt for a real brief instead of building a random draft from
-// "build me an audience", "create a segment", etc.
-function isVagueAudienceBrief(message: string) {
-  const cleaned = message.trim().toLowerCase();
-  if (cleaned.length === 0) return true;
-
-  const wordCount = cleaned.split(/\s+/).length;
-
-  const onlyMetaWords =
-    /^(build|create|make|generate|set up|setup|give|show|suggest|recommend|design|draft)\s+(me\s+)?(an?\s+|some\s+|the\s+)?(audience|audiences|segment|segments|signals?|targets?|plan|draft)s?\.?\??$/i;
-  if (onlyMetaWords.test(cleaned)) return true;
-
-  if (wordCount <= 2 && /^(audience|signals?|segments?|targets?)\.?$/i.test(cleaned)) {
-    return true;
-  }
-
-  // Has an age range -> not vague.
-  if (/\b\d{1,2}\s*(?:-|to)\s*\d{1,2}\b/.test(cleaned)) return false;
-  if (/\b(?:aged|age|years? old|under|over)\s+\d{1,2}\b/.test(cleaned)) return false;
-
-  // Has a recognisable targeting concept noun -> not vague.
-  const conceptPattern =
-    /\b(fitness|gym|exercise|yoga|running|runner|hiker|hiking|cyclist|sports?|athletic|premium|luxury|affluent|upscale|wealthy|high[- ]income|parent|parents|mom|moms|dad|dads|kids?|children|family|toddler|baby|babies|coffee|cafe|grocery|groceries|organic|food|foodie|dining|restaurant|wine|beer|cocktail|travel|traveler|airline|hotel|tourism|vacation|auto|automotive|cars?|suv|truck|dealership|fashion|beauty|cosmetic|tech|technology|gamer|gaming|outdoor|hiking|home|homeowner|renter|furniture|pet|pets|dog|cat|investor|donor|charity|charitable|graduate|student|professional|retiree|senior|millennials?|gen[ -]?z|boomers?)\b/i;
-  if (conceptPattern.test(cleaned)) return false;
-
-  // Long descriptive sentences (>= 5 meaningful words) are probably specific
-  // even if no single keyword matches our list.
-  if (wordCount >= 6) return false;
-
-  return true;
-}
-
+/**
+ * Returns true if the message is a yes/confirm-type reply.
+ * Used to detect planner consent when the assistant has proposed a
+ * pending action (e.g. removing low-confidence signals) and is waiting
+ * for a "yes" before executing it.
+ */
 function isAffirmativeConfirmation(message: string) {
   return /^(yes|yep|yeah|sure|ok|okay|confirm|confirmed|remove|remove it|delete|delete it|do it|please remove|go ahead)\b/i.test(
     message.trim(),
   );
 }
 
+/**
+ * Returns true if the message is a no/cancel-type reply.
+ * Used as the counterpart to isAffirmativeConfirmation — if the planner
+ * says "no" or "keep them", the pending action is cancelled instead of
+ * executed.
+ */
 function isNegativeConfirmation(message: string) {
   return /^(no|nope|cancel|keep|keep them|do not|don't|stop)\b/i.test(
     message.trim(),
   );
 }
 
+/**
+ * Extracts a confidence threshold from phrases like "below 80%" or
+ * "under 0.6" in the planner's message. Converts percentage values (e.g.
+ * 80) to a decimal (0.80) automatically. Clamps the result to 0.10–0.95.
+ * Returns the default threshold of 0.75 if no explicit value is found.
+ */
 function confidenceThresholdFromMessage(message: string) {
   const lower = message.toLowerCase();
 
@@ -241,10 +222,22 @@ function confidenceThresholdFromMessage(message: string) {
   return Math.max(0.1, Math.min(threshold, 0.95));
 }
 
+/**
+ * Converts a decimal confidence value (e.g. 0.75) to a display-friendly
+ * percentage string (e.g. "75%") for use in assistant reply messages.
+ */
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
+/**
+ * Deterministic (no-LLM) intent extraction using keyword pattern matching.
+ * Called as the fallback when the LLM is unavailable or returns invalid JSON.
+ * It scans the message for known domain keywords (fitness, premium, auto,
+ * coffee, etc.) and populates the AudienceIntent fields manually.
+ * If fewer than 3 words are in the message it sets clarificationNeeded=true
+ * to prompt the planner for more detail.
+ */
 function fallbackIntentFromMessage(message: string): AudienceIntent {
   const lower = message.toLowerCase();
   const ageMatch = lower.match(/(\d{2})\s*(?:-|to|through)\s*(\d{2})/);
@@ -341,6 +334,20 @@ function fallbackIntentFromMessage(message: string): AudienceIntent {
   };
 }
 
+/**
+ * LLM CALL #2 — Extracts a structured AudienceIntent object from the
+ * planner's natural language message.
+ *
+ * The intent includes: ageRange, demographics, interests, behaviors,
+ * locations, transactions, exclusions, sensitiveRequest flag, and most
+ * importantly `searchKeywords` — concise terms used to drive the pgvector
+ * taxonomy search.
+ *
+ * In REFINE mode the prompt includes the current brief and selected signal
+ * names so the LLM focuses on what's new, not what already exists.
+ * Falls back to fallbackIntentFromMessage() if the LLM call fails or
+ * returns an invalid schema.
+ */
 async function extractAudienceIntent(
   message: string,
   context?: {
@@ -408,6 +415,41 @@ Rules:
   });
 }
 
+/**
+ * Generates a human-readable rationale sentence for a taxonomy signal
+ * based on its source type. Each source type (LOCATION, TRANSACTION,
+ * CONSUMER_GRAPH_FIELD, CONSUMER_GRAPH_VALUE) gets a different sentence
+ * template that explains what the signal actually captures in plain English,
+ * including the breadcrumb path when it differs from the signal name.
+ */
+function signalRationale(candidate: RankedTaxonomySignal): string {
+  const name = cleanDisplayText(candidate.name);
+  const path = candidate.path ? cleanDisplayText(candidate.path) : null;
+  const breadcrumb = path && path !== name ? ` (under ${path})` : "";
+
+  switch (candidate.source) {
+    case "LOCATION":
+      return `People who have physically visited ${name} locations${breadcrumb}, indicating real-world presence and intent in this category.`;
+    case "TRANSACTION":
+      return `People with purchase history or buying intent in ${name}${breadcrumb}, a strong behavioral signal for this audience.`;
+    case "CONSUMER_GRAPH_FIELD":
+      return `${name}${breadcrumb} — a demographic or interest attribute that directly characterises this audience segment.`;
+    case "CONSUMER_GRAPH_VALUE":
+      return `Targets individuals matching the specific profile value: ${name}${breadcrumb}.`;
+    default:
+      return `Taxonomy signal: ${name}${breadcrumb}.`;
+  }
+}
+
+/**
+ * Converts a RankedTaxonomySignal (raw DB row + score) into a
+ * RecommendedSignal (the shape stored on AudiencePlan.selectedSignals).
+ * The confidence score is derived from the candidate's position in the
+ * ranked list and its raw search score:
+ *   confidence = clamp(0.94 - index*0.045 + score*0.006, 0.58, 0.95)
+ * Higher-ranked signals get higher confidence; the score bonus rewards
+ * exact keyword matches.
+ */
 function candidateToRecommendedSignal(
   candidate: RankedTaxonomySignal,
   index: number,
@@ -417,26 +459,33 @@ function candidateToRecommendedSignal(
     Math.min(0.95, 0.94 - index * 0.045 + candidate.score * 0.006),
   );
 
-  const sourceLabel = candidate.source
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
-
   return {
     id: candidate.id,
     source: candidate.source,
     name: cleanDisplayText(candidate.name),
     path: candidate.path ? cleanDisplayText(candidate.path) : null,
     confidence: Number(confidence.toFixed(2)),
-    rationale: `${sourceLabel} match from the provided taxonomy that aligns with the requested audience behavior or attribute.`,
+    rationale: signalRationale(candidate),
   };
 }
 
+/**
+ * Clips a string to maxLength characters and appends "..." if truncated.
+ * Used to keep the candidate payload sent to the LLM small enough that the
+ * total prompt stays within the model's context window limit.
+ */
 function truncateForPrompt(value: string | null | undefined, maxLength = 160) {
   const cleaned = cleanDisplayText(value);
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 3)}...` : cleaned;
 }
 
+/**
+ * Deterministic (no-LLM) audience recommendation used when the LLM is
+ * unavailable or returns invalid JSON. Takes the top 6 ranked taxonomy
+ * candidates and converts them directly into recommended signals using
+ * candidateToRecommendedSignal(). Sets clarificationNeeded=true if no
+ * candidates were found.
+ */
 function fallbackRecommendation(
   message: string,
   intent: AudienceIntent,
@@ -474,6 +523,18 @@ function fallbackRecommendation(
   };
 }
 
+/**
+ * LLM CALL #3 — Asks the LLM to select the best signals from the ranked
+ * taxonomy candidates and write a specific rationale for each.
+ *
+ * Security: after the LLM responds, every recommended signal ID is validated
+ * against the candidates map. IDs not in that map are silently dropped —
+ * the LLM cannot hallucinate a signal that doesn't exist in the database.
+ *
+ * If the LLM selects fewer than maxSignals valid signals, supplemental
+ * candidates are appended using candidateToRecommendedSignal() to ensure
+ * the planner always sees a useful set of results.
+ */
 async function recommendAudience(
   message: string,
   intent: AudienceIntent,
@@ -512,6 +573,16 @@ Critical rules:
 - Avoid sensitive targeting.
 - confidence MUST be a number between 0 and 1, not a string.
 - Return valid JSON only.
+
+Rationale rules — this is important:
+- rationale must be a single specific sentence that explains TWO things:
+  1. What behaviour or attribute this signal captures (e.g. "people who have purchased running shoes")
+  2. Why that makes it relevant to the planner's request (e.g. "indicating active interest in fitness")
+- Do NOT write generic phrases like "aligns with the request" or "matches the audience".
+- Do NOT copy the signal name as the entire rationale.
+- Each signal must have a DIFFERENT rationale that reflects its own unique meaning.
+- Example good rationale: "Captures people who dine out frequently at restaurants, directly matching the food-lover behaviour the planner is targeting."
+- Example bad rationale: "Transaction match from the provided taxonomy that aligns with the requested audience."
 `,
       },
       {
@@ -521,24 +592,24 @@ Critical rules:
           extractedIntent: intent,
           candidates: candidatePayload,
           outputShape: {
-            audienceName: "string",
-            summary: "string",
+            audienceName: "short descriptive name for the audience",
+            summary: "1-2 sentence summary of the targeting strategy",
             recommendedSignals: [
               {
-                id: "candidate id only",
+                id: "exact candidate id from the list above",
                 source:
                   "LOCATION|TRANSACTION|CONSUMER_GRAPH_FIELD|CONSUMER_GRAPH_VALUE",
-                name: "candidate name",
-                path: "candidate path|null",
+                name: "exact candidate name from the list above",
+                path: "candidate path or null",
                 confidence: 0.85,
-                rationale: "why this signal fits",
+                rationale: "One specific sentence: what this signal captures AND why it matches the planner's request.",
               },
             ],
             rejectedSignals: [
-              { id: "string", name: "string", reason: "string" },
+              { id: "string", name: "string", reason: "why this candidate was not selected" },
             ],
-            clarificationNeeded: "boolean",
-            clarificationQuestion: "string|null",
+            clarificationNeeded: false,
+            clarificationQuestion: null,
           },
         }),
       },
@@ -582,6 +653,12 @@ Critical rules:
   };
 }
 
+/**
+ * Formats a list of RecommendedSignals into a numbered plain-text list
+ * suitable for inclusion in an assistant reply message. Each line shows:
+ * "N. Signal Name (SOURCE TYPE) — XX% confidence. Rationale sentence."
+ * Returns "No signals selected yet." if the list is empty.
+ */
 function formatSignalList(signals: RecommendedSignal[]) {
   if (signals.length === 0) {
     return "No signals selected yet.";
@@ -595,6 +672,12 @@ function formatSignalList(signals: RecommendedSignal[]) {
     .join("\n");
 }
 
+/**
+ * Builds the full assistant reply when a brand-new audience draft is created
+ * (BUILD_AUDIENCE action). The message includes: the audience name, summary,
+ * the numbered signal list, and instructions for next steps (approve, remove,
+ * add more, broaden/narrow). Appends a clarifying question when needed.
+ */
 function formatCreatedRecommendationMessage(
   recommendation: AudienceRecommendation,
 ) {
@@ -615,6 +698,12 @@ function formatCreatedRecommendationMessage(
   ].join("\n");
 }
 
+/**
+ * Builds the assistant reply after a REFINE_AUDIENCE or ADD_SIGNAL action.
+ * Shows how many new signals were added (and how many were requested),
+ * lists only the newly added signals (not the full plan), and states the
+ * updated total signal count. Includes next-step prompts for the planner.
+ */
 function formatRefinedRecommendationMessage({
   recommendation,
   addedSignals,
@@ -656,6 +745,12 @@ function formatRefinedRecommendationMessage({
   ].join("\n");
 }
 
+/**
+ * Builds the assistant reply for the SHOW_SELECTED_SIGNALS action.
+ * Lists every currently selected signal with name, source, confidence,
+ * and rationale. Also shows the latest audience size estimate if one
+ * has been calculated. Returns a short message if no signals exist yet.
+ */
 function formatAllSelectedSignalsMessage(plan: {
   audienceName: string | null;
   summary: string | null;
@@ -686,6 +781,46 @@ function formatAllSelectedSignalsMessage(plan: {
   ].join("\n");
 }
 
+/**
+ * Builds the assistant reply for the EXPLAIN_CURRENT_DRAFT action.
+ * Gives the audience a plain-English explanation: the audience name,
+ * its summary, and what each selected signal means in real-world terms.
+ * Ends with a sentence explaining that these signals are the actual
+ * targeting criteria the platform would apply.
+ */
+function formatCurrentDraftExplanation(plan: {
+  audienceName: string | null;
+  summary: string | null;
+  selectedSignals: unknown;
+}) {
+  const selectedSignals = jsonSignals(plan);
+  const name = plan.audienceName ?? "current draft audience";
+  const summary =
+    plan.summary ??
+    "This draft is built from taxonomy-backed signals that matched your audience request.";
+
+  if (selectedSignals.length === 0) {
+    return `The current draft audience is "${name}", but it does not have any selected signals yet. Tell me who you want to reach and I can build it with taxonomy-backed signals.`;
+  }
+
+  return [
+    `The current draft audience is "${name}".`,
+    summary,
+    "",
+    "Each selected signal means:",
+    formatSignalList(selectedSignals),
+    "",
+    "In plain English, these signals are the criteria the platform would use to find people who match the audience.",
+  ].join("\n");
+}
+
+/**
+ * Builds the assistant reply for the REVIEW_LOW_CONFIDENCE_SIGNALS action.
+ * Lists all selected signals whose confidence is below the given threshold
+ * and asks the planner to confirm whether they should be removed. The IDs
+ * are stored in the message metadata as a pendingAction so the next yes/no
+ * reply can execute or cancel the removal without another LLM call.
+ */
 function formatLowConfidenceReviewMessage({
   lowConfidenceSignals,
   threshold,
@@ -710,6 +845,12 @@ function formatLowConfidenceReviewMessage({
   ].join("\n");
 }
 
+/**
+ * Builds the confirmation message sent after low-confidence signals have
+ * been removed from the draft. Lists each removed signal and states the
+ * new total signal count. Returns a "nothing was removed" message if the
+ * signal IDs were not found in the current draft (e.g. already removed).
+ */
 function formatLowConfidenceRemovalMessage({
   removedSignals,
   remainingCount,
@@ -730,6 +871,12 @@ function formatLowConfidenceRemovalMessage({
   ].join("\n");
 }
 
+/**
+ * Builds the assistant reply that displays an audience size estimate.
+ * When approved=true, the message confirms approval and shows the locked
+ * estimate range. When approved=false (preview/draft), it shows the estimate
+ * but reminds the planner they need to approve to lock it in.
+ */
 function formatEstimateMessage(estimate: AudienceEstimate, approved: boolean) {
   const header = approved
     ? `Approved. Estimated reachable audience: ${estimate.estimatedMin.toLocaleString()} - ${estimate.estimatedMax.toLocaleString()}.`
@@ -740,11 +887,6 @@ function formatEstimateMessage(estimate: AudienceEstimate, approved: boolean) {
     `Confidence: ${Math.round(estimate.confidence * 100)}%.`,
     estimate.methodology,
   ].join("\n");
-}
-
-function parseRemoveTerm(message: string) {
-  const match = message.match(removePattern);
-  return match?.[1]?.replace(/[.!?]$/, "").trim() ?? null;
 }
 
 const removeTermStopWords = new Set([
@@ -766,7 +908,13 @@ const removeTermStopWords = new Set([
   "targets",
 ]);
 
-/** Turns "Hiking signal" / "audience Hiking" into searchable terms like "hiking". */
+/**
+ * Normalises a raw remove term into a set of searchable token variants.
+ * For example "Hiking signal" becomes ["hiking", "hiking signal"] after
+ * lowercasing, stripping punctuation, and removing filler stop words like
+ * "signal", "audience", "the". Both the full cleaned phrase and each
+ * individual token are returned so partial matches also work.
+ */
 function normalizeRemoveSearchTerms(term: string) {
   const cleaned = term.trim().toLowerCase().replace(/[.!?]+$/, "");
   const tokens = cleaned
@@ -787,6 +935,12 @@ function normalizeRemoveSearchTerms(term: string) {
   return [...variants];
 }
 
+/**
+ * Returns true if a signal's name or path contains any of the remove terms
+ * after normalisation. Used to match planner intent like "remove hiking"
+ * against stored signal names like "Backpacking/Hiking" by checking all
+ * token variants produced by normalizeRemoveSearchTerms().
+ */
 function signalMatchesRemoveTerms(
   signal: RecommendedSignal,
   removeTerms: string[],
@@ -800,148 +954,24 @@ function signalMatchesRemoveTerms(
   );
 }
 
+/**
+ * Returns a minimal safe AgentDecision when the LLM is unavailable or
+ * returns an invalid response for the routing call (LLM #1). If a plan
+ * already exists it uses GENERAL_REPLY so the user sees an error message
+ * without losing their draft. If no plan exists yet it uses ASK_CLARIFICATION.
+ */
 function fallbackAgentDecision(
   message: string,
   hasExistingPlan: boolean,
 ): AgentDecision {
-  const lower = message.toLowerCase();
-
-  if (hasExistingPlan && approvalPattern.test(message)) {
-    return {
-      action: "APPROVE_AUDIENCE",
-      assistantReply:
-        "Great, I will approve this audience and calculate the reachable audience size.",
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: true,
-      shouldApprove: true,
-    };
-  }
-
-  if (
-    hasExistingPlan &&
-    estimatePattern.test(message) &&
-    message.trim().split(/\s+/).length <= 7
-  ) {
-    return {
-      action: "ESTIMATE_AUDIENCE",
-      assistantReply: "I will estimate the current draft audience.",
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: true,
-      shouldApprove: false,
-    };
-  }
-
-  const removeTerm = hasExistingPlan ? parseRemoveTerm(message) : null;
-
-  if (removeTerm) {
-    return {
-      action: "REMOVE_SIGNAL",
-      assistantReply: `I will remove signals matching "${removeTerm}" from the current draft audience.`,
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [removeTerm],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
-  if (
-    /\b(hi|hello|hey|thanks|thank you)\b/.test(lower) &&
-    message.trim().split(/\s+/).length <= 4
-  ) {
-    return {
-      action: "GENERAL_REPLY",
-      assistantReply: hasExistingPlan
-        ? "Happy to help. You can ask me to explain, refine, broaden, narrow, approve, estimate, or show the current audience."
-        : "Hi! Tell me who you want to reach, and I will translate that into taxonomy-backed advertising signals.",
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
-  if (
-    hasExistingPlan &&
-    /\b(why|explain|what does|what are|summarize|summary|rationale|how did you)\b/.test(
-      lower,
-    )
-  ) {
-    return {
-      action: "GENERAL_REPLY",
-      assistantReply:
-        "I selected signals by searching the provided targeting taxonomy and choosing the rows that best match your planner request. Location signals represent places people visit, transaction signals represent purchases, and consumer graph signals represent demographic or lifestyle attributes.",
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
-  if (
-    hasExistingPlan &&
-    /\b(add|include|also|as well|along with|plus|more|same category|broader|narrower|focus|remove|exclude|premium|luxury|fitness|running|travel|auto|car|cars|parents|grocery|coffee)\b/.test(
-      lower,
-    )
-  ) {
-    return {
-      action: "REFINE_AUDIENCE",
-      assistantReply:
-        "I will refine the current draft audience using taxonomy-backed signals.",
-      audienceRequest: message,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
-  if (!hasExistingPlan && isVagueAudienceBrief(message)) {
-    return {
-      action: "ASK_CLARIFICATION",
-      assistantReply:
-        "Sure — who do you want to reach? Describe the audience in a sentence or two. For example: \"fitness enthusiasts aged 25-44 with premium shopping habits\", \"parents of toddlers who shop at Whole Foods\", or \"luxury car shoppers in California\".",
-      audienceRequest: null,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
-  const looksLikeAudienceRequest =
-    message.trim().split(/\s+/).length >= 3 ||
-    /\b(age|aged|target|reach|audience|people|users|shoppers|visitors|enthusiasts|buyers|parents|travelers|lovers)\b/.test(
-      lower,
-    );
-
-  if (looksLikeAudienceRequest) {
-    return {
-      action: hasExistingPlan ? "REFINE_AUDIENCE" : "BUILD_AUDIENCE",
-      assistantReply: hasExistingPlan
-        ? "I will update the draft audience using your latest instruction."
-        : "I will build a draft audience from your request.",
-      audienceRequest: message,
-      signalsToAdd: [],
-      signalsToRemove: [],
-      shouldEstimate: false,
-      shouldApprove: false,
-    };
-  }
-
   return {
-    action: "GENERAL_REPLY",
+    action: hasExistingPlan ? "GENERAL_REPLY" : "ASK_CLARIFICATION",
     assistantReply:
-      "I can help you build an advertising audience, explain selected signals, refine the draft, approve it, estimate reach, or show the current selected audience signals.",
+      "I am having trouble reaching the LLM right now. Please try again in a moment.",
     audienceRequest: null,
     signalsToAdd: [],
     signalsToRemove: [],
+    needsMoreInfo: !hasExistingPlan,
     shouldEstimate: false,
     shouldApprove: false,
   };
@@ -953,9 +983,16 @@ type ResolvedAgentDecision = {
 };
 
 /**
- * LLM chooses the next action from conversation + plan context.
- * Deterministic rules in fallbackAgentDecision run only when the LLM call
- * fails (no API key, invalid JSON, schema validation error, rate limit, etc.).
+ * LLM CALL #1 — Reads the planner's latest message, the current plan
+ * summary, and the last 12 conversation turns, then returns a structured
+ * AgentDecision selecting exactly one action from the allowed enum:
+ * BUILD_AUDIENCE, REFINE_AUDIENCE, REMOVE_SIGNAL, ADD_SIGNAL,
+ * APPROVE_AUDIENCE, ESTIMATE_AUDIENCE, SHOW_SELECTED_SIGNALS,
+ * EXPLAIN_CURRENT_DRAFT, REVIEW_LOW_CONFIDENCE_SIGNALS, ASK_CLARIFICATION,
+ * or GENERAL_REPLY.
+ *
+ * Returns both the decision and its source ("llm" | "fallback") so callers
+ * can include provenance in message metadata for debugging.
  */
 async function resolveAgentDecision({
   message,
@@ -983,28 +1020,35 @@ You are a conversational advertising audience planning assistant.
 Your job is to read the planner's latest message and choose exactly one action.
 Return valid JSON only.
 
-Action selection (follow strictly):
-- GENERAL_REPLY: greetings, thanks, or questions that do not change the draft.
-- BUILD_AUDIENCE: only when hasExistingPlan is false and the user describes a new target audience.
-- REFINE_AUDIENCE: when hasExistingPlan is true and the user wants to add, include, broaden, narrow, or extend the current draft. This includes phrases like "add", "also", "as well", "along with", "plus", "include", or "more".
-- REMOVE_SIGNAL: user wants to drop signals from the current draft.
-- ADD_SIGNAL: optional synonym for adding signals when hasExistingPlan is true; prefer REFINE_AUDIENCE.
-- APPROVE_AUDIENCE: user confirms or approves the draft.
-- ESTIMATE_AUDIENCE: user asks for reach/size estimate without approving.
-- ASK_CLARIFICATION: the request is too vague to act on.
+Available actions:
+- GENERAL_REPLY: answer conversationally without changing the draft.
+- BUILD_AUDIENCE: create or replace an audience from a planner's targeting brief.
+- REFINE_AUDIENCE: update the current draft by adding, broadening, narrowing, or emphasizing targeting concepts.
+- REMOVE_SIGNAL: remove one or more selected signals from the current draft.
+- ADD_SIGNAL: same intent as REFINE_AUDIENCE; use only if the user specifically asks to add signals.
+- APPROVE_AUDIENCE: approve the current draft.
+- ESTIMATE_AUDIENCE: estimate current draft reach without approving.
+- SHOW_SELECTED_SIGNALS: show the current selected signals exactly as stored.
+- EXPLAIN_CURRENT_DRAFT: explain what the current draft, audience, or selected signals mean.
+- REVIEW_LOW_CONFIDENCE_SIGNALS: review selected signals with weak confidence and ask whether to remove them.
+- ASK_CLARIFICATION: ask a useful follow-up when you cannot safely choose another action.
 
-Critical:
-- When hasExistingPlan is true, do NOT use BUILD_AUDIENCE unless the user explicitly asks to start over, replace everything, reset, or create a brand-new audience from scratch.
-- When hasExistingPlan is true and the user adds a new segment (e.g. "add car lovers as well"), use REFINE_AUDIENCE so existing selected signals are kept.
-- When hasExistingPlan is false and the user message has no concrete targeting concept (e.g. "build me an audience", "create a segment", "give me signals"), use ASK_CLARIFICATION and ask who they want to reach. Do NOT use BUILD_AUDIENCE for empty or vague briefs.
-- audienceRequest should capture what to build or refine; use the latest user message text.
-- signalsToAdd / signalsToRemove: keyword hints from the user message (arrays, may be empty).
-- assistantReply: short action statement (not a question) for BUILD_AUDIENCE and REFINE_AUDIENCE. For ASK_CLARIFICATION, assistantReply must be a friendly question asking for concrete targeting details (behavior, interest, location, purchase, age, or demographic).
+Routing rules:
+- You decide the action from the latest user message, currentPlan, and recentConversation. Do not rely on keyword matching; infer intent from meaning.
+- GENERAL_REPLY must answer naturally in the assistant's voice. Do not echo or repeat the user's message.
+- If the user asks a casual question, greeting, product question, or explanation that does not require a database change, use GENERAL_REPLY or EXPLAIN_CURRENT_DRAFT.
+- If hasExistingPlan is false, use BUILD_AUDIENCE only when the user gives a usable targeting brief. Otherwise use ASK_CLARIFICATION.
+- If hasExistingPlan is true, keep the existing draft unless the user clearly asks to replace, reset, or start over.
+- For REMOVE_SIGNAL, put human-readable signal names or concepts in signalsToRemove.
+- For REFINE_AUDIENCE or ADD_SIGNAL, put requested concepts in signalsToAdd and put the user request in audienceRequest.
+- assistantReply should be a helpful natural-language response for GENERAL_REPLY and ASK_CLARIFICATION. For actions that the backend will execute, use a short action statement.
+- If you need more information from the user, set needsMoreInfo=true and choose ASK_CLARIFICATION. Never set needsMoreInfo=true while choosing BUILD_AUDIENCE or REFINE_AUDIENCE.
 
 Output requirements:
 - action is required.
 - audienceRequest: plain string or null.
 - signalsToAdd and signalsToRemove: arrays (never null).
+- needsMoreInfo: boolean.
 - shouldEstimate and shouldApprove: booleans.
 `,
       },
@@ -1015,37 +1059,14 @@ Output requirements:
           hasExistingPlan,
           currentPlan: existingPlan,
           recentConversation: history.slice(-12),
-          examples: [
-            {
-              hasExistingPlan: false,
-              message: "fitness enthusiasts aged 25-44 with premium shopping habits",
-              action: "BUILD_AUDIENCE",
-            },
-            {
-              hasExistingPlan: false,
-              message: "build me an audience",
-              action: "ASK_CLARIFICATION",
-              assistantReply:
-                "Sure — who do you want to reach? Tell me a behavior, interest, location, purchase, or demographic to target.",
-            },
-            {
-              hasExistingPlan: false,
-              message: "create a segment",
-              action: "ASK_CLARIFICATION",
-            },
-            {
-              hasExistingPlan: true,
-              message: "add car lover audience as well",
-              action: "REFINE_AUDIENCE",
-            },
-          ],
           outputShape: {
             action:
-              "GENERAL_REPLY|BUILD_AUDIENCE|REFINE_AUDIENCE|REMOVE_SIGNAL|ADD_SIGNAL|APPROVE_AUDIENCE|ESTIMATE_AUDIENCE|ASK_CLARIFICATION",
+              "GENERAL_REPLY|BUILD_AUDIENCE|REFINE_AUDIENCE|REMOVE_SIGNAL|ADD_SIGNAL|APPROVE_AUDIENCE|ESTIMATE_AUDIENCE|SHOW_SELECTED_SIGNALS|EXPLAIN_CURRENT_DRAFT|REVIEW_LOW_CONFIDENCE_SIGNALS|ASK_CLARIFICATION",
             assistantReply: "string",
             audienceRequest: "string|null",
             signalsToAdd: ["string"],
             signalsToRemove: ["string"],
+            needsMoreInfo: false,
             shouldEstimate: false,
             shouldApprove: false,
           },
@@ -1064,6 +1085,12 @@ Output requirements:
   return { decision: fallback, source: "fallback" };
 }
 
+/**
+ * Returns true when the action should be treated as a refinement of an
+ * existing plan rather than a full rebuild. Refinement means: keep existing
+ * signals, merge in new ones, and preserve the original brief. Only true
+ * when a plan already exists AND the action is REFINE_AUDIENCE or ADD_SIGNAL.
+ */
 function isAudienceRefinementAction(
   action: AgentDecision["action"],
   hasExistingPlan: boolean,
@@ -1074,6 +1101,25 @@ function isAudienceRefinementAction(
   );
 }
 
+/**
+ * Returns true if the action is one that triggers the full intent-extract →
+ * taxonomy-search → LLM-recommend pipeline. Used to guard against sending
+ * the planner to that pipeline when needsMoreInfo=true is set.
+ */
+function isAudienceBuildAction(action: AgentDecision["action"]) {
+  return (
+    action === "BUILD_AUDIENCE" ||
+    action === "REFINE_AUDIENCE" ||
+    action === "ADD_SIGNAL"
+  );
+}
+
+/**
+ * Loads the AudiencePlan for a conversation from the database.
+ * Throws a 400 HttpError if no plan exists yet — callers use this to
+ * guard actions (approve, remove, estimate) that require a plan to be
+ * present before they can proceed.
+ */
 async function loadPlan(conversationId: string) {
   const plan = await prisma.audiencePlan.findUnique({
     where: { conversationId },
@@ -1089,14 +1135,30 @@ async function loadPlan(conversationId: string) {
   return plan;
 }
 
+/**
+ * Safely casts the JSONB `selectedSignals` column value to a typed
+ * RecommendedSignal array. Prisma returns JSONB columns as `unknown`
+ * because Zod/Prisma don't know the embedded shape at the ORM layer.
+ */
 function jsonSignals(plan: { selectedSignals: unknown }) {
   return (plan.selectedSignals ?? []) as RecommendedSignal[];
 }
 
+/**
+ * Safely casts the JSONB `intent` column value to AudienceIntent | null.
+ * Returns null when no intent has been stored yet (e.g. plan was just
+ * created or the field is missing from an older row).
+ */
 function jsonIntent(plan: { intent: unknown }) {
   return (plan.intent ?? null) as AudienceIntent | null;
 }
 
+/**
+ * Deduplicates a RecommendedSignal array by signal ID, preserving the
+ * original order. The first occurrence of each ID is kept; subsequent
+ * duplicates are discarded. Used after merging existing and new signals
+ * to prevent the same taxonomy entry appearing twice in a plan.
+ */
 function removeDuplicateSignals(signals: RecommendedSignal[]) {
   const seen = new Set<string>();
 
@@ -1107,6 +1169,12 @@ function removeDuplicateSignals(signals: RecommendedSignal[]) {
   });
 }
 
+/**
+ * Merges new signals into an existing signal list, skipping any that are
+ * already selected (by ID). If `limit` is provided, only the first `limit`
+ * new signals are added — used when the planner requested a specific count
+ * like "add 3 more". Returns both the added slice and the full merged list.
+ */
 function mergeSignals({
   existingSignals,
   newSignals,
@@ -1134,6 +1202,12 @@ function mergeSignals({
   };
 }
 
+/**
+ * Removes signals from a list whose name or path matches any of the
+ * remove terms. Used to apply REMOVE_SIGNAL intent during a REFINE action
+ * when the planner says something like "add more fitness but remove hiking".
+ * Returns the original list unchanged if removeTerms is empty.
+ */
 function filterSignalsByRemoveTerms({
   signals,
   removeTerms,
@@ -1148,6 +1222,13 @@ function filterSignalsByRemoveTerms({
   return signals.filter((signal) => !signalMatchesRemoveTerms(signal, removeTerms));
 }
 
+/**
+ * Fills remaining signal slots from taxonomy candidates when the LLM
+ * selected fewer signals than the planner requested. Filters out signals
+ * already selected, blocked IDs (recently removed), and sensitive content.
+ * When focusTerms are provided only candidates whose text contains at
+ * least one focus term are included, keeping supplemental picks on-topic.
+ */
 function supplementalSignalsFromCandidates({
   candidates,
   selectedSignals,
@@ -1193,6 +1274,13 @@ function supplementalSignalsFromCandidates({
     );
 }
 
+/**
+ * Extracts domain-specific keywords from a refinement message for use as
+ * candidate filters. Strips stop words and expands known domain groups:
+ * e.g. "car" expands to ["car", "cars", "auto", "automotive", "suv", ...].
+ * Returns up to 20 terms. Used to make sure supplemental candidates stay
+ * semantically relevant to the new concept the planner introduced.
+ */
 function extractFocusTerms(message: string) {
   const lower = message.toLowerCase();
   const terms = lower
@@ -1259,6 +1347,13 @@ function extractFocusTerms(message: string) {
   return [...expanded].slice(0, 20);
 }
 
+/**
+ * Returns true if the candidate's name, path, or description contains at
+ * least one of the focus terms (case-insensitive). When focusTerms is
+ * empty every candidate passes (no filter applied). Used during refinement
+ * to narrow the candidate pool to signals that are topically relevant to
+ * the new concept the planner asked for.
+ */
 function candidateMatchesFocusTerms(
   candidate: RankedTaxonomySignal,
   focusTerms: string[],
@@ -1269,6 +1364,12 @@ function candidateMatchesFocusTerms(
   return focusTerms.some((term) => text.includes(term.toLowerCase()));
 }
 
+/**
+ * Scans the last 12 assistant messages' metadata for signal IDs that were
+ * previously removed. Returns a Set of those IDs so the taxonomy search
+ * and supplemental-signal logic can exclude them — preventing the agent
+ * from immediately re-recommending a signal the planner just removed.
+ */
 function findRecentlyRemovedSignalIds(
   messages: Array<{
     role: MessageRole | string;
@@ -1303,10 +1404,22 @@ function findRecentlyRemovedSignalIds(
   return ids;
 }
 
+/**
+ * Type guard that checks whether a value is a plain object (not null, not
+ * an array). Used throughout the service to safely access `metadata` fields
+ * from message rows, which are typed as `unknown` by Prisma.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Checks whether the previous assistant message was a REVIEW_LOW_CONFIDENCE
+ * prompt that is now waiting for planner confirmation (yes/no).
+ * Looks at the last assistant message before the current user message and
+ * reads its `pendingAction` metadata field. Returns the pending signal IDs
+ * and threshold if found, or null if there is no pending action to resolve.
+ */
 function findPendingLowConfidenceRemoval(
   messages: Array<{
     role: MessageRole | string;
@@ -1346,6 +1459,13 @@ function findPendingLowConfidenceRemoval(
   };
 }
 
+/**
+ * Executes the deferred low-confidence signal removal after the planner
+ * confirms with "yes". Loads the current plan, splits selectedSignals into
+ * removed (IDs in the pending set) and remaining, saves the remaining list
+ * to the DB (resetting estimate fields), and writes an assistant confirmation
+ * message with the removed signal names and the new total count.
+ */
 async function removePendingLowConfidenceSignals({
   conversationId,
   signalIds,
@@ -1390,6 +1510,16 @@ async function removePendingLowConfidenceSignals({
   });
 }
 
+/**
+ * EXPORTED — Approves or previews an audience plan.
+ *
+ * Runs the audience size estimator against the current selected signals and
+ * intent, then writes the estimate fields to AudiencePlan. When approved=true
+ * (APPROVE action) the plan and conversation are both marked APPROVED and the
+ * estimate is locked. When approved=false (ESTIMATE action) the plan stays in
+ * DRAFT but the estimate is still saved so the planner can see a preview.
+ * Saves an assistant message with the estimate range and confidence.
+ */
 export async function approveAudiencePlan(
   conversationId: string,
   approved = true,
@@ -1431,6 +1561,13 @@ export async function approveAudiencePlan(
   return estimate;
 }
 
+/**
+ * EXPORTED — Removes a single signal from the plan by its exact database ID.
+ * Called from the REST route when the planner clicks the remove button in the
+ * UI panel (as opposed to typing "remove hiking" in the chat). Resets the
+ * estimate fields to null since the audience composition changed, and saves
+ * an assistant confirmation message.
+ */
 export async function removeSignalFromPlan(
   conversationId: string,
   signalId: string,
@@ -1466,6 +1603,13 @@ export async function removeSignalFromPlan(
   });
 }
 
+/**
+ * Removes signals from the plan that match a text term typed in the chat
+ * (e.g. "remove hiking"). Uses signalMatchesRemoveTerms() for fuzzy matching
+ * so "hiking" also matches "Backpacking/Hiking". If no matching signal is
+ * found, writes a helpful hint message showing what search term was tried.
+ * Resets estimate fields and writes a confirmation message on success.
+ */
 async function removeSignalByText(conversationId: string, term: string) {
   const plan = await loadPlan(conversationId);
   const selectedSignals = jsonSignals(plan);
@@ -1519,6 +1663,30 @@ async function removeSignalByText(conversationId: string, term: string) {
   });
 }
 
+/**
+ * EXPORTED — Main entry point for every planner chat message.
+ *
+ * Full orchestration flow (in order):
+ *  1. Clean the raw message (strip any pasted assistant text).
+ *  2. Load the conversation with its plan and full message history.
+ *  3. Check for a pending low-confidence removal — if the last assistant
+ *     message was a yes/no prompt, resolve it immediately and return early.
+ *  4. Block sensitive requests before any LLM call.
+ *  5. LLM #1 — resolveAgentDecision() picks the action.
+ *  6. Handle simple non-pipeline actions without calling more LLMs:
+ *     needsMoreInfo guard, SHOW_SELECTED_SIGNALS, EXPLAIN_CURRENT_DRAFT,
+ *     REVIEW_LOW_CONFIDENCE_SIGNALS, GENERAL_REPLY, ASK_CLARIFICATION,
+ *     APPROVE_AUDIENCE, ESTIMATE_AUDIENCE, REMOVE_SIGNAL.
+ *  7. For BUILD/REFINE/ADD_SIGNAL actions:
+ *     a. Build the full audience request string (with context for refinement).
+ *     b. LLM #2 — extractAudienceIntent() → structured intent + searchKeywords.
+ *     c. pgvector taxonomy search → ranked candidates.
+ *     d. LLM #3 — recommendAudience() → validated signal selection.
+ *     e. Apply remove-term filters, merge with existing signals (refinement),
+ *        top up with supplemental candidates if short.
+ *     f. Upsert AudiencePlan, update conversation title/status.
+ *     g. Save assistant message with full metadata for debugging.
+ */
 export async function handlePlannerMessage(
   conversationId: string,
   rawMessage: string,
@@ -1568,21 +1736,6 @@ export async function handlePlannerMessage(
     }
   }
 
-  if (existingPlan && isListSelectedSignalsRequest(message)) {
-    await prisma.message.create({
-      data: {
-        conversationId,
-        role: MessageRole.ASSISTANT,
-        content: formatAllSelectedSignalsMessage(existingPlan),
-        metadata: {
-          action: "SHOW_SELECTED_SIGNALS",
-          selectedSignalCount: jsonSignals(existingPlan).length,
-        },
-      },
-    });
-    return;
-  }
-
   if (isSensitiveText(message)) {
     await prisma.message.create({
       data: {
@@ -1598,23 +1751,70 @@ export async function handlePlannerMessage(
     return;
   }
 
-  if (!existingPlan && isVagueAudienceBrief(message)) {
+  const { decision, source: decisionSource } = await resolveAgentDecision({
+    message,
+    existingPlan,
+    history: conversation.messages.map((item) => ({
+      role: item.role,
+      content: item.content,
+    })),
+  });
+
+  if (
+    isAudienceBuildAction(decision.action) &&
+    decision.needsMoreInfo
+  ) {
     await prisma.message.create({
       data: {
         conversationId,
         role: MessageRole.ASSISTANT,
-        content:
-          "Sure — who do you want to reach? Describe the audience in a sentence or two. For example: \"fitness enthusiasts aged 25-44 with premium shopping habits\", \"parents of toddlers who shop at Whole Foods\", or \"luxury car shoppers in California\".",
+        content: decision.assistantReply,
         metadata: {
-          action: "ASK_CLARIFICATION",
-          reason: "vague-brief",
+          decision: {
+            ...decision,
+            action: "ASK_CLARIFICATION",
+          },
+          decisionSource,
+          correctedInconsistentAction: decision.action,
         },
       },
     });
     return;
   }
 
-  if (existingPlan && isLowConfidenceReviewRequest(message)) {
+  if (existingPlan && decision.action === "SHOW_SELECTED_SIGNALS") {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content: formatAllSelectedSignalsMessage(existingPlan),
+        metadata: {
+          decision,
+          decisionSource,
+          selectedSignalCount: jsonSignals(existingPlan).length,
+        },
+      },
+    });
+    return;
+  }
+
+  if (existingPlan && decision.action === "EXPLAIN_CURRENT_DRAFT") {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content: formatCurrentDraftExplanation(existingPlan),
+        metadata: {
+          decision,
+          decisionSource,
+          selectedSignalCount: jsonSignals(existingPlan).length,
+        },
+      },
+    });
+    return;
+  }
+
+  if (existingPlan && decision.action === "REVIEW_LOW_CONFIDENCE_SIGNALS") {
     const threshold = confidenceThresholdFromMessage(message);
     const selectedSignals = jsonSignals(existingPlan);
     const lowConfidenceSignals = selectedSignals.filter(
@@ -1647,15 +1847,6 @@ export async function handlePlannerMessage(
     return;
   }
 
-  const { decision, source: decisionSource } = await resolveAgentDecision({
-    message,
-    existingPlan,
-    history: conversation.messages.map((item) => ({
-      role: item.role,
-      content: item.content,
-    })),
-  });
-
   if (
     decision.action === "GENERAL_REPLY" ||
     decision.action === "ASK_CLARIFICATION"
@@ -1665,6 +1856,25 @@ export async function handlePlannerMessage(
         conversationId,
         role: MessageRole.ASSISTANT,
         content: decision.assistantReply,
+        metadata: { decision, decisionSource },
+      },
+    });
+    return;
+  }
+
+  if (
+    !existingPlan &&
+    decision.action !== "BUILD_AUDIENCE" &&
+    decision.action !== "REFINE_AUDIENCE" &&
+    decision.action !== "ADD_SIGNAL"
+  ) {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content:
+          decision.assistantReply ||
+          "There is no draft audience yet. Tell me who you want to reach, and I can build one first.",
         metadata: { decision, decisionSource },
       },
     });
@@ -1690,18 +1900,26 @@ export async function handlePlannerMessage(
   const removeTerms =
     decision.signalsToRemove.length > 0 ? [...decision.signalsToRemove] : [];
 
-  const directRemoveTerm = existingPlan ? parseRemoveTerm(message) : null;
-
-  if (directRemoveTerm && !removeTerms.includes(directRemoveTerm)) {
-    removeTerms.push(directRemoveTerm);
-  }
-
   if (
     existingPlan &&
     decision.action === "REMOVE_SIGNAL" &&
     removeTerms.length > 0
   ) {
     await removeSignalByText(conversationId, removeTerms[0]);
+    return;
+  }
+
+  if (existingPlan && decision.action === "REMOVE_SIGNAL") {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: MessageRole.ASSISTANT,
+        content:
+          decision.assistantReply ||
+          "Which selected signal should I remove from the current draft?",
+        metadata: { decision, decisionSource },
+      },
+    });
     return;
   }
 

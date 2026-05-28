@@ -91,6 +91,9 @@ export const AgentDecisionSchema = z.object({
     "ADD_SIGNAL",
     "APPROVE_AUDIENCE",
     "ESTIMATE_AUDIENCE",
+    "SHOW_SELECTED_SIGNALS",
+    "EXPLAIN_CURRENT_DRAFT",
+    "REVIEW_LOW_CONFIDENCE_SIGNALS",
     "ASK_CLARIFICATION",
   ]),
   assistantReply: z.string().default(""),
@@ -113,6 +116,7 @@ export const AgentDecisionSchema = z.object({
     .nullable()
     .default([])
     .transform((value) => value ?? []),
+  needsMoreInfo: BooleanishSchema.default(false),
   shouldEstimate: BooleanishSchema.default(false),
   shouldApprove: BooleanishSchema.default(false),
 });

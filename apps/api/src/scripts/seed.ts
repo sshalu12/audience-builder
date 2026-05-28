@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { parse } from "csv-parse/sync";
 import { Role, SignalSource } from "@prisma/client";
 import { prisma } from "../db.js";
+import { generateEmbeddingsForAllSignals } from "../services/embedding.service.js";
 
 function dataPath(fileName: string) {
   return path.resolve(process.cwd(), "data", fileName);
@@ -217,6 +218,7 @@ async function main() {
   };
 
   console.log("Seed complete", counts);
+  await generateEmbeddingsForAllSignals();
 }
 
 main()
