@@ -74,6 +74,40 @@ export const AudienceRecommendationSchema = z.object({
 
 export type AudienceRecommendation = z.infer<typeof AudienceRecommendationSchema>;
 
+export const SignalFitRationaleItemSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id =
+    record.id ??
+    record.signalId ??
+    record.signal_id ??
+    record.name ??
+    "";
+
+  const rationale =
+    record.rationale ??
+    record.reason ??
+    record.whyItFits ??
+    record.why_it_fits ??
+    record.explanation ??
+    record.fit ??
+    "";
+
+  return { id, rationale };
+}, z.object({
+  id: z.string(),
+  rationale: z.string(),
+}));
+
+export const SignalFitRationalesSchema = z.object({
+  signals: z.array(SignalFitRationaleItemSchema),
+});
+
+export type SignalFitRationales = z.infer<typeof SignalFitRationalesSchema>;
+
 export type AudienceEstimate = {
   estimatedMin: number;
   estimatedMax: number;

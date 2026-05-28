@@ -349,7 +349,15 @@ function normalizeCandidate(
 
 // LLMs sometimes wrap the payload in an envelope key (e.g. `{ decision: {…} }`).
 // Try the original payload first, then each known wrapper.
-const wrapperKeys = ["decision", "result", "response", "data", "output", "json"];
+const wrapperKeys = [
+  "decision",
+  "result",
+  "response",
+  "data",
+  "output",
+  "outputShape",
+  "json",
+];
 
 /**
  * Returns all normalised candidate payloads to try Zod validation against.

@@ -13,11 +13,13 @@ import {
   AgentDecisionSchema,
   AudienceIntentSchema,
   AudienceRecommendationSchema,
+  SignalFitRationalesSchema,
   type AgentDecision,
   type AudienceEstimate,
   type AudienceIntent,
   type AudienceRecommendation,
   type RecommendedSignal,
+  type SignalFitRationales,
 } from "./schemas.js";
 import {
   cleanDisplayText,
@@ -319,11 +321,8 @@ function fallbackIntentFromMessage(message: string): AudienceIntent {
     exclusions,
     sensitiveRequest: isSensitiveText(message),
     safeAlternative: null,
-    clarificationNeeded: message.trim().split(/\s+/).length < 3,
-    clarificationQuestion:
-      message.trim().split(/\s+/).length < 3
-      ? "Can you add more detail about the behaviors, locations, purchases, or demographics you want to target?"
-      : null,
+    clarificationNeeded: false,
+    clarificationQuestion: null,
     searchKeywords: [
       ...interests,
       ...behaviors,
@@ -379,6 +378,7 @@ Return valid JSON only.
 
 Rules:
 - Do not invent taxonomy IDs.
+- Always extract the best-effort intent from whatever the planner wrote.  set clarificationNeeded to true only when it is very unclear what the user wants.
 - searchKeywords are the bridge to taxonomy lookup. They must be concise targeting concepts, not a copy of the whole sentence.
 - If mode is REFINE, prioritize the latest request and signalsToAdd. Use currentBrief/currentSignals only as context for what already exists.
 - If mode is REFINE and the user asks for a new concept like "car lovers" or "food lovers", searchKeywords must focus on that new concept, not the old audience.
@@ -416,60 +416,6 @@ Rules:
 }
 
 /**
- * Generates a human-readable rationale sentence for a taxonomy signal
- * based on its source type. Each source type (LOCATION, TRANSACTION,
- * CONSUMER_GRAPH_FIELD, CONSUMER_GRAPH_VALUE) gets a different sentence
- * template that explains what the signal actually captures in plain English,
- * including the breadcrumb path when it differs from the signal name.
- */
-function signalRationale(candidate: RankedTaxonomySignal): string {
-  const name = cleanDisplayText(candidate.name);
-  const path = candidate.path ? cleanDisplayText(candidate.path) : null;
-  const breadcrumb = path && path !== name ? ` (under ${path})` : "";
-
-  switch (candidate.source) {
-    case "LOCATION":
-      return `People who have physically visited ${name} locations${breadcrumb}, indicating real-world presence and intent in this category.`;
-    case "TRANSACTION":
-      return `People with purchase history or buying intent in ${name}${breadcrumb}, a strong behavioral signal for this audience.`;
-    case "CONSUMER_GRAPH_FIELD":
-      return `${name}${breadcrumb} — a demographic or interest attribute that directly characterises this audience segment.`;
-    case "CONSUMER_GRAPH_VALUE":
-      return `Targets individuals matching the specific profile value: ${name}${breadcrumb}.`;
-    default:
-      return `Taxonomy signal: ${name}${breadcrumb}.`;
-  }
-}
-
-/**
- * Converts a RankedTaxonomySignal (raw DB row + score) into a
- * RecommendedSignal (the shape stored on AudiencePlan.selectedSignals).
- * The confidence score is derived from the candidate's position in the
- * ranked list and its raw search score:
- *   confidence = clamp(0.94 - index*0.045 + score*0.006, 0.58, 0.95)
- * Higher-ranked signals get higher confidence; the score bonus rewards
- * exact keyword matches.
- */
-function candidateToRecommendedSignal(
-  candidate: RankedTaxonomySignal,
-  index: number,
-): RecommendedSignal {
-  const confidence = Math.max(
-    0.58,
-    Math.min(0.95, 0.94 - index * 0.045 + candidate.score * 0.006),
-  );
-
-  return {
-    id: candidate.id,
-    source: candidate.source,
-    name: cleanDisplayText(candidate.name),
-    path: candidate.path ? cleanDisplayText(candidate.path) : null,
-    confidence: Number(confidence.toFixed(2)),
-    rationale: signalRationale(candidate),
-  };
-}
-
-/**
  * Clips a string to maxLength characters and appends "..." if truncated.
  * Used to keep the candidate payload sent to the LLM small enough that the
  * total prompt stays within the model's context window limit.
@@ -481,29 +427,41 @@ function truncateForPrompt(value: string | null | undefined, maxLength = 160) {
 
 /**
  * Deterministic (no-LLM) audience recommendation used when the LLM is
- * unavailable or returns invalid JSON. Takes the top 6 ranked taxonomy
- * candidates and converts them directly into recommended signals using
- * candidateToRecommendedSignal(). Sets clarificationNeeded=true if no
- * candidates were found.
+ * unavailable or returns invalid JSON. Takes the top ranked taxonomy
+ * candidates; rationales are filled in by applyLlmSignalFitRationales().
  */
 function fallbackRecommendation(
   message: string,
   intent: AudienceIntent,
   candidates: RankedTaxonomySignal[],
 ): AudienceRecommendation {
-  const selected = candidates.slice(0, 6).map(candidateToRecommendedSignal);
-
-  const ageText =
-    intent.ageRange?.min && intent.ageRange.max
-      ? ` ages ${intent.ageRange.min}-${intent.ageRange.max}`
-      : "";
-
   const focus = [
     ...intent.interests,
     ...intent.behaviors,
     ...intent.locations,
     ...intent.transactions,
   ][0];
+
+  const selected = candidates.slice(0, 6).map((candidate, index) => {
+    const confidence = Math.max(
+      0.58,
+      Math.min(0.95, 0.94 - index * 0.045 + candidate.score * 0.006),
+    );
+
+    return {
+      id: candidate.id,
+      source: candidate.source,
+      name: cleanDisplayText(candidate.name),
+      path: candidate.path ? cleanDisplayText(candidate.path) : null,
+      confidence: Number(confidence.toFixed(2)),
+      rationale: "",
+    } satisfies RecommendedSignal;
+  });
+
+  const ageText =
+    intent.ageRange?.min && intent.ageRange.max
+      ? ` ages ${intent.ageRange.min}-${intent.ageRange.max}`
+      : "";
 
   return {
     audienceName: focus
@@ -515,12 +473,209 @@ function fallbackRecommendation(
         : "I could not find strong taxonomy matches yet. Add more detail or search for a specific behavior, place, purchase, or demographic attribute.",
     recommendedSignals: selected,
     rejectedSignals: [],
-    clarificationNeeded: selected.length === 0,
-    clarificationQuestion:
-      selected.length === 0
-        ? "Could you describe the audience using locations they visit, products they buy, interests, or demographic attributes?"
-        : null,
+    clarificationNeeded: false,
+    clarificationQuestion: null,
   };
+}
+
+/**
+ * Resolves LLM-recommended signals to validated taxonomy candidates.
+ * Matches by exact ID first, then by signal name when the LLM returns a wrong ID.
+ */
+function resolveLlmRecommendedSignals(
+  llmSignals: RecommendedSignal[],
+  candidates: RankedTaxonomySignal[],
+  maxSignals: number,
+) {
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const candidateByName = new Map(
+    candidates.map((candidate) => [
+      cleanDisplayText(candidate.name).toLowerCase(),
+      candidate,
+    ]),
+  );
+
+  const resolved: RecommendedSignal[] = [];
+
+  for (const [index, signal] of llmSignals.entries()) {
+    const candidate =
+      candidateById.get(signal.id) ??
+      candidateByName.get(cleanDisplayText(signal.name).toLowerCase());
+
+    if (!candidate) continue;
+    if (isSensitiveText(`${candidate.name} ${candidate.path ?? ""}`)) continue;
+
+    const llmConfidence = Number(signal.confidence);
+    const confidence = Number.isFinite(llmConfidence)
+      ? Math.max(0.58, Math.min(0.95, llmConfidence))
+      : Math.max(
+          0.58,
+          Math.min(0.95, 0.94 - index * 0.045 + candidate.score * 0.006),
+        );
+
+    resolved.push({
+      id: candidate.id,
+      source: candidate.source,
+      name: cleanDisplayText(candidate.name),
+      path: candidate.path ? cleanDisplayText(candidate.path) : null,
+      confidence: Number(confidence.toFixed(2)),
+      rationale: signal.rationale?.trim() ?? "",
+    });
+
+    if (resolved.length >= maxSignals) break;
+  }
+
+  return resolved;
+}
+
+/**
+ * Deterministic one-line fit explanation when the rationale LLM call fails or
+ * omits a signal. Wording varies by source type so lines are not identical.
+ */
+function buildFallbackFitRationale(
+  signal: RecommendedSignal,
+  plannerRequest: string,
+  intent: AudienceIntent,
+) {
+  const intentTerms = [
+    ...intent.interests,
+    ...intent.behaviors,
+    ...intent.locations,
+    ...intent.transactions,
+  ]
+    .slice(0, 3)
+    .join(", ");
+
+  const requestFocus =
+    intentTerms ||
+    plannerRequest.replace(/\s+/g, " ").trim().slice(0, 100) ||
+    "your audience brief";
+
+  switch (signal.source) {
+    case "TRANSACTION":
+      return `${signal.name} tracks purchase behavior linked to ${requestFocus}, helping find people who match that part of your request.`;
+    case "LOCATION":
+      return `${signal.name} identifies people who visit places tied to ${requestFocus}, matching the location side of your audience.`;
+    case "CONSUMER_GRAPH_FIELD":
+    case "CONSUMER_GRAPH_VALUE":
+      return `${signal.name} adds a profile trait connected to ${requestFocus}, narrowing the audience to the people you described.`;
+    default:
+      return `${signal.name} is a taxonomy match for ${requestFocus} based on your request.`;
+  }
+}
+
+/**
+ * Maps LLM rationale rows onto selected signals by id, then by name.
+ */
+function mergeRationalesOntoSignals(
+  signals: RecommendedSignal[],
+  rationaleRows: Array<{ id: string; rationale: string }>,
+) {
+  const byId = new Map<string, string>();
+  const byName = new Map<string, string>();
+
+  for (const row of rationaleRows) {
+    const rationale = row.rationale?.trim();
+    if (!rationale) continue;
+
+    if (row.id) {
+      byId.set(row.id, rationale);
+      byName.set(row.id.toLowerCase(), rationale);
+    }
+  }
+
+  return signals.map((signal) => {
+    const fromId = byId.get(signal.id);
+    if (fromId) {
+      return { ...signal, rationale: fromId };
+    }
+
+    const fromName = byName.get(signal.name.toLowerCase());
+    if (fromName) {
+      return { ...signal, rationale: fromName };
+    }
+
+    return signal;
+  });
+}
+
+/**
+ * LLM CALL — Generates a unique "why it fits" rationale for each selected signal
+ * based on the planner's request and the audience being built.
+ */
+async function applyLlmSignalFitRationales({
+  plannerRequest,
+  audienceName,
+  intent,
+  signals,
+}: {
+  plannerRequest: string;
+  audienceName: string;
+  intent: AudienceIntent;
+  signals: RecommendedSignal[];
+}) {
+  if (signals.length === 0) {
+    return signals;
+  }
+
+  const signalsNeedingRationale = signals.filter((signal) => !signal.rationale?.trim());
+  const payload = (signalsNeedingRationale.length > 0
+    ? signalsNeedingRationale
+    : signals
+  ).map((signal) => ({
+    id: signal.id,
+    name: signal.name,
+    source: signal.source,
+    path: signal.path,
+  }));
+
+  const result = await generateJson<SignalFitRationales>({
+    label: "signal-fit-rationales",
+    schema: SignalFitRationalesSchema,
+    fallback: undefined,
+    messages: [
+      {
+        role: "system",
+        content: `
+You explain why advertising taxonomy signals fit a planner's audience request.
+
+Return valid JSON only.
+
+Rules:
+- Write exactly one rationale per supplied signal id.
+- Each rationale must be one specific sentence tied to the planner's request — not a template.
+- Explain why THIS signal helps reach the audience described in the request.
+- Reference concrete details from the planner request (e.g. coffee, cafes, dining out, age range).
+- Do NOT repeat the signal name as the whole rationale.
+- Do NOT use generic phrases like "aligns with the request", "matches the audience", or "reflects the buying patterns".
+- Do NOT use the same sentence structure for every signal.
+- Example: "Frequent restaurant visits indicate the out-of-home dining habit your coffee-lover audience needs alongside cafe behavior."
+`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          plannerRequest,
+          audienceName,
+          extractedIntent: intent,
+          selectedSignals: payload,
+          outputShape: {
+            signals: [{ id: "exact id from selectedSignals", rationale: "string" }],
+          },
+        }),
+      },
+    ],
+  });
+
+  const rationaleRows = result?.signals ?? [];
+  const merged = mergeRationalesOntoSignals(signals, rationaleRows);
+
+  return merged.map((signal) => ({
+    ...signal,
+    rationale:
+      signal.rationale?.trim() ||
+      buildFallbackFitRationale(signal, plannerRequest, intent),
+  }));
 }
 
 /**
@@ -532,8 +687,7 @@ function fallbackRecommendation(
  * the LLM cannot hallucinate a signal that doesn't exist in the database.
  *
  * If the LLM selects fewer than maxSignals valid signals, supplemental
- * candidates are appended using candidateToRecommendedSignal() to ensure
- * the planner always sees a useful set of results.
+ * candidates are appended to ensure the planner always sees a useful set.
  */
 async function recommendAudience(
   message: string,
@@ -575,13 +729,12 @@ Critical rules:
 - Return valid JSON only.
 
 Rationale rules — this is important:
-- rationale must be a single specific sentence that explains TWO things:
-  1. What behaviour or attribute this signal captures (e.g. "people who have purchased running shoes")
-  2. Why that makes it relevant to the planner's request (e.g. "indicating active interest in fitness")
+- rationale must be one sentence explaining why this signal fits the audience the planner wants to build.
+- Include what the signal captures AND why it is relevant to the planner's specific request.
 - Do NOT write generic phrases like "aligns with the request" or "matches the audience".
 - Do NOT copy the signal name as the entire rationale.
-- Each signal must have a DIFFERENT rationale that reflects its own unique meaning.
-- Example good rationale: "Captures people who dine out frequently at restaurants, directly matching the food-lover behaviour the planner is targeting."
+- Each signal must have a DIFFERENT rationale tied to its unique meaning.
+- Example good rationale: "Captures people who dine out frequently at restaurants, which directly reflects the food-lover behavior in the audience you are building."
 - Example bad rationale: "Transaction match from the provided taxonomy that aligns with the requested audience."
 `,
       },
@@ -602,7 +755,7 @@ Rationale rules — this is important:
                 name: "exact candidate name from the list above",
                 path: "candidate path or null",
                 confidence: 0.85,
-                rationale: "One specific sentence: what this signal captures AND why it matches the planner's request.",
+                rationale: "One sentence: why this signal fits the audience the planner wants to build.",
               },
             ],
             rejectedSignals: [
@@ -616,16 +769,17 @@ Rationale rules — this is important:
     ],
   });
 
-  const candidateById = new Map(
-    candidatePayload.map((candidate) => [candidate.id, candidate]),
-  );
-
   const resolved = recommendation ?? fallback;
+  const resolvedAudienceName =
+    resolved.audienceName && resolved.audienceName !== "Draft audience"
+      ? resolved.audienceName
+      : fallback.audienceName;
 
-  const safeSignals = resolved.recommendedSignals
-    .filter((signal) => candidateById.has(signal.id))
-    .filter((signal) => !isSensitiveText(`${signal.name} ${signal.path ?? ""}`))
-    .slice(0, maxSignals);
+  const safeSignals = resolveLlmRecommendedSignals(
+    resolved.recommendedSignals,
+    candidates,
+    maxSignals,
+  );
 
   const selectedIds = new Set(safeSignals.map((signal) => signal.id));
   const supplementalSignals = candidates
@@ -635,29 +789,56 @@ Rationale rules — this is important:
         !isSensitiveText(`${candidate.name} ${candidate.path ?? ""}`),
     )
     .slice(0, Math.max(0, maxSignals - safeSignals.length))
-    .map((candidate, index) =>
-      candidateToRecommendedSignal(candidate, safeSignals.length + index),
-    );
+    .map((candidate, index) => {
+      const confidence = Math.max(
+        0.58,
+        Math.min(0.95, 0.94 - (safeSignals.length + index) * 0.045 + candidate.score * 0.006),
+      );
+
+      return {
+        id: candidate.id,
+        source: candidate.source,
+        name: cleanDisplayText(candidate.name),
+        path: candidate.path ? cleanDisplayText(candidate.path) : null,
+        confidence: Number(confidence.toFixed(2)),
+        rationale: "",
+      } satisfies RecommendedSignal;
+    });
 
   const finalSignals = [...safeSignals, ...supplementalSignals].slice(
     0,
     maxSignals,
   );
 
+  const baseSignals =
+    finalSignals.length > 0
+      ? finalSignals
+      : fallback.recommendedSignals.slice(0, maxSignals);
+
+  const signalsWithRationales = await applyLlmSignalFitRationales({
+    plannerRequest: message,
+    audienceName: resolvedAudienceName,
+    intent,
+    signals: baseSignals,
+  });
+
   return {
     ...resolved,
-    recommendedSignals:
-      finalSignals.length > 0
-        ? finalSignals
-        : fallback.recommendedSignals.slice(0, maxSignals),
+    audienceName: resolvedAudienceName,
+    summary:
+      resolved.summary &&
+      resolved.summary !==
+        "Matched the request to taxonomy-backed targeting signals from the available catalog."
+        ? resolved.summary
+        : fallback.summary,
+    recommendedSignals: signalsWithRationales,
   };
 }
 
 /**
  * Formats a list of RecommendedSignals into a numbered plain-text list
  * suitable for inclusion in an assistant reply message. Each line shows:
- * "N. Signal Name (SOURCE TYPE) — XX% confidence. Rationale sentence."
- * Returns "No signals selected yet." if the list is empty.
+ * signal name, source, confidence, and a one-line "Why it fits" description.
  */
 function formatSignalList(signals: RecommendedSignal[]) {
   if (signals.length === 0) {
@@ -667,7 +848,7 @@ function formatSignalList(signals: RecommendedSignal[]) {
   return signals
     .map(
       (signal, index) =>
-        `${index + 1}. ${signal.name} (${signal.source.replace(/_/g, " ")}) — ${Math.round(signal.confidence * 100)}% confidence. ${signal.rationale}`,
+        `${index + 1}. ${signal.name} (${signal.source.replace(/_/g, " ")}) — ${Math.round(signal.confidence * 100)}% confidence\n   Why it fits: ${signal.rationale}`,
     )
     .join("\n");
 }
@@ -681,11 +862,6 @@ function formatSignalList(signals: RecommendedSignal[]) {
 function formatCreatedRecommendationMessage(
   recommendation: AudienceRecommendation,
 ) {
-  const clarification =
-    recommendation.clarificationNeeded && recommendation.clarificationQuestion
-      ? `\n\nClarifying question: ${recommendation.clarificationQuestion}`
-      : "";
-
   return [
     `I searched the available targeting taxonomy and created a draft audience: ${recommendation.audienceName}`,
     recommendation.summary,
@@ -694,7 +870,6 @@ function formatCreatedRecommendationMessage(
     formatSignalList(recommendation.recommendedSignals),
     "",
     "You can approve this audience, remove a signal, ask me to add more signals, or ask me to make it broader or narrower.",
-    clarification,
   ].join("\n");
 }
 
@@ -955,15 +1130,88 @@ function signalMatchesRemoveTerms(
 }
 
 /**
+ * Returns true when the planner message is trying to create or build an audience.
+ */
+function isAudienceBuildRequest(message: string) {
+  const lower = message.toLowerCase().trim();
+  if (!lower) return false;
+
+  const buildVerbs =
+    /\b(build|create|make|define|target|reach|find|audience|segment|signals?)\b/.test(
+      lower,
+    );
+  const targetingDetail =
+    /\b(aged?|ages?|who|visit|buy|shop|love|lover|interested|demographic|parent|travel|fitness|coffee|food|car|auto|grocery|restaurant|dining|premium|luxury|hiking|gym)\b/.test(
+      lower,
+    );
+
+  return buildVerbs || targetingDetail || lower.split(/\s+/).length >= 4;
+}
+
+/**
+ * When the planner wants to create or build an audience, force BUILD_AUDIENCE
+ * or REFINE_AUDIENCE instead of ASK_CLARIFICATION and never block on needsMoreInfo.
+ */
+function normalizeAudienceBuildDecision(
+  decision: AgentDecision,
+  message: string,
+  hasExistingPlan: boolean,
+): AgentDecision {
+  const wantsNewDraft =
+    /\b(start over|from scratch|replace|reset|new audience|rebuild)\b/i.test(
+      message,
+    ) ||
+    (/\b(build|create)\b/i.test(message) &&
+      /\b(audience|segment)\b/i.test(message));
+
+  if (
+    decision.action === "ASK_CLARIFICATION" &&
+    isAudienceBuildRequest(message)
+  ) {
+    return {
+      ...decision,
+      action:
+        hasExistingPlan && !wantsNewDraft ? "REFINE_AUDIENCE" : "BUILD_AUDIENCE",
+      needsMoreInfo: false,
+      audienceRequest: decision.audienceRequest ?? message,
+    };
+  }
+
+  if (isAudienceBuildAction(decision.action)) {
+    return {
+      ...decision,
+      needsMoreInfo: false,
+      audienceRequest: decision.audienceRequest ?? message,
+    };
+  }
+
+  return decision;
+}
+
+/**
  * Returns a minimal safe AgentDecision when the LLM is unavailable or
  * returns an invalid response for the routing call (LLM #1). If a plan
  * already exists it uses GENERAL_REPLY so the user sees an error message
- * without losing their draft. If no plan exists yet it uses ASK_CLARIFICATION.
+ * without losing their draft. If no plan exists yet it uses BUILD_AUDIENCE
+ * when the message looks like an audience request.
  */
 function fallbackAgentDecision(
   message: string,
   hasExistingPlan: boolean,
 ): AgentDecision {
+  if (isAudienceBuildRequest(message)) {
+    return {
+      action: hasExistingPlan ? "REFINE_AUDIENCE" : "BUILD_AUDIENCE",
+      assistantReply: "I will build a draft audience from your request.",
+      audienceRequest: message,
+      signalsToAdd: [],
+      signalsToRemove: [],
+      needsMoreInfo: false,
+      shouldEstimate: false,
+      shouldApprove: false,
+    };
+  }
+
   return {
     action: hasExistingPlan ? "GENERAL_REPLY" : "ASK_CLARIFICATION",
     assistantReply:
@@ -971,7 +1219,7 @@ function fallbackAgentDecision(
     audienceRequest: null,
     signalsToAdd: [],
     signalsToRemove: [],
-    needsMoreInfo: !hasExistingPlan,
+    needsMoreInfo: false,
     shouldEstimate: false,
     shouldApprove: false,
   };
@@ -1031,18 +1279,20 @@ Available actions:
 - SHOW_SELECTED_SIGNALS: show the current selected signals exactly as stored.
 - EXPLAIN_CURRENT_DRAFT: explain what the current draft, audience, or selected signals mean.
 - REVIEW_LOW_CONFIDENCE_SIGNALS: review selected signals with weak confidence and ask whether to remove them.
-- ASK_CLARIFICATION: ask a useful follow-up when you cannot safely choose another action.
+- ASK_CLARIFICATION: only for non-audience questions when no other action applies. Never use this when the planner wants to create or build an audience.
 
 Routing rules:
 - You decide the action from the latest user message, currentPlan, and recentConversation. Do not rely on keyword matching; infer intent from meaning.
 - GENERAL_REPLY must answer naturally in the assistant's voice. Do not echo or repeat the user's message.
 - If the user asks a casual question, greeting, product question, or explanation that does not require a database change, use GENERAL_REPLY or EXPLAIN_CURRENT_DRAFT.
-- If hasExistingPlan is false, use BUILD_AUDIENCE only when the user gives a usable targeting brief. Otherwise use ASK_CLARIFICATION.
-- If hasExistingPlan is true, keep the existing draft unless the user clearly asks to replace, reset, or start over.
+- When the planner wants to create or build an audience, you MUST choose BUILD_AUDIENCE or REFINE_AUDIENCE. Never choose ASK_CLARIFICATION for audience creation.
+- If hasExistingPlan is false and the user describes who to reach (even briefly), use BUILD_AUDIENCE with their message as audienceRequest.
+- If hasExistingPlan is true and the user describes a new or updated audience, use REFINE_AUDIENCE unless they explicitly say start over, replace, reset, or new audience — then use BUILD_AUDIENCE.
+- Never ask clarifying questions before building. Extract the best targeting intent you can and proceed.
 - For REMOVE_SIGNAL, put human-readable signal names or concepts in signalsToRemove.
 - For REFINE_AUDIENCE or ADD_SIGNAL, put requested concepts in signalsToAdd and put the user request in audienceRequest.
-- assistantReply should be a helpful natural-language response for GENERAL_REPLY and ASK_CLARIFICATION. For actions that the backend will execute, use a short action statement.
-- If you need more information from the user, set needsMoreInfo=true and choose ASK_CLARIFICATION. Never set needsMoreInfo=true while choosing BUILD_AUDIENCE or REFINE_AUDIENCE.
+- assistantReply should be a short action statement for BUILD_AUDIENCE and REFINE_AUDIENCE. Use natural language only for GENERAL_REPLY.
+- needsMoreInfo must always be false for BUILD_AUDIENCE and REFINE_AUDIENCE.
 
 Output requirements:
 - action is required.
@@ -1076,13 +1326,23 @@ Output requirements:
   });
 
   if (llmDecision) {
-    return { decision: llmDecision, source: "llm" };
+    return {
+      decision: normalizeAudienceBuildDecision(
+        llmDecision,
+        message,
+        hasExistingPlan,
+      ),
+      source: "llm",
+    };
   }
 
   console.warn(
     `[agent-decision] LLM did not return a valid decision; using deterministic fallback (action=${fallback.action}).`,
   );
-  return { decision: fallback, source: "fallback" };
+  return {
+    decision: normalizeAudienceBuildDecision(fallback, message, hasExistingPlan),
+    source: "fallback",
+  };
 }
 
 /**
@@ -1269,9 +1529,24 @@ function supplementalSignalsFromCandidates({
 
   return (terms.length > 0 ? byFocusTerms : filtered)
     .slice(0, neededCount)
-    .map((candidate, index) =>
-      candidateToRecommendedSignal(candidate, selectedSignals.length + index),
-    );
+    .map((candidate, index) => {
+      const confidence = Math.max(
+        0.58,
+        Math.min(
+          0.95,
+          0.94 - (selectedSignals.length + index) * 0.045 + candidate.score * 0.006,
+        ),
+      );
+
+      return {
+        id: candidate.id,
+        source: candidate.source,
+        name: cleanDisplayText(candidate.name),
+        path: candidate.path ? cleanDisplayText(candidate.path) : null,
+        confidence: Number(confidence.toFixed(2)),
+        rationale: "",
+      } satisfies RecommendedSignal;
+    });
 }
 
 /**
@@ -2089,6 +2364,20 @@ export async function handlePlannerMessage(
         ...selectedSignals,
         ...supplementalSignals,
       ]);
+    }
+
+    if (addedSignals.length > 0) {
+      addedSignals = await applyLlmSignalFitRationales({
+        plannerRequest: audienceRequest,
+        audienceName: finalRecommendation.audienceName,
+        intent,
+        signals: addedSignals,
+      });
+
+      const addedById = new Map(addedSignals.map((signal) => [signal.id, signal]));
+      selectedSignals = selectedSignals.map(
+        (signal) => addedById.get(signal.id) ?? signal,
+      );
     }
   } else {
     addedSignals = finalRecommendation.recommendedSignals.slice(0, requestedCount);
