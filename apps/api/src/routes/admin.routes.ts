@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Role, SignalSource } from "@prisma/client";
+import { ConversationStatus, Role, SignalSource } from "@prisma/client";
 import { prisma } from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -31,6 +31,7 @@ adminRouter.get(
   "/conversations",
   asyncHandler(async (_req, res) => {
     const conversations = await prisma.conversation.findMany({
+      where: { status: ConversationStatus.APPROVED },
       include: {
         user: { select: { id: true, email: true, name: true, role: true } },
         audiencePlan: true,

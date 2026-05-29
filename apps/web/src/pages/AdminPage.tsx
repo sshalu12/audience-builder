@@ -87,7 +87,7 @@ export function AdminPage() {
       </section>
 
       <section className="admin-card">
-        <h2>Recent Conversations</h2>
+        <h2>Approved Audiences</h2>
         <div className="table-wrap">
           <table>
             <thead>

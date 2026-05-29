@@ -15,12 +15,14 @@ export function SignalPanel({
   onEstimate,
   onRemoveSignal,
   approving,
+  readOnly = false,
 }: {
   plan?: AudiencePlan | null;
   onApprove: () => void;
   onEstimate: () => void;
   onRemoveSignal: (signalId: string) => void;
   approving: boolean;
+  readOnly?: boolean;
 }) 
 {
   if (!plan) {
@@ -60,9 +62,11 @@ export function SignalPanel({
               <p>{signal.rationale}</p>
               <div className="signal-actions">
                 <span>Confidence {Math.round(signal.confidence * 100)}%</span>
-                <button className="button ghost small" onClick={() => onRemoveSignal(signal.id)}>
-                  Remove
-                </button>
+                {!readOnly && (
+                  <button className="button ghost small" onClick={() => onRemoveSignal(signal.id)}>
+                    Remove
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -84,14 +88,16 @@ export function SignalPanel({
         )}
       </section>
 
-      <div className="panel-actions">
-        <button className="button secondary" onClick={onEstimate} disabled={approving || signals.length === 0}>
-          Estimate
-        </button>
-        <button className="button" onClick={onApprove} disabled={approving || signals.length === 0}>
-          Approve Audience
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="panel-actions">
+          <button className="button secondary" onClick={onEstimate} disabled={approving || signals.length === 0}>
+            Estimate
+          </button>
+          <button className="button" onClick={onApprove} disabled={approving || signals.length === 0}>
+            Approve Audience
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

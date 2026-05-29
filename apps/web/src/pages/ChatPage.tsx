@@ -8,6 +8,7 @@ import {
   sendMessage,
 } from "../api/client";
 import { SignalPanel } from "../components/SignalPanel";
+import { useAuth } from "../context/AuthContext";
 import type { Conversation, Message } from "../types";
 
 function MessageBubble({ message }: { message: Message }) {
@@ -20,6 +21,8 @@ function MessageBubble({ message }: { message: Message }) {
 }
 
 export function ChatPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const { id } = useParams<{ id: string }>();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [input, setInput] = useState("");
@@ -52,7 +55,7 @@ export function ChatPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!id || !input.trim() || !conversation) return;
+    if (isAdmin || !id || !input.trim() || !conversation) return;
 
     const content = input.trim();
     const pendingMessageId = `pending-user-${Date.now()}`;
@@ -173,17 +176,21 @@ export function ChatPage() {
 
         {error && <p className="error">{error}</p>}
 
-        <form className="composer" onSubmit={submit}>
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Describe the audience or refine it, e.g. remove premium apparel, make it broader, approve this audience..."
-            rows={3}
-          />
-          <button className="button" disabled={sending || !input.trim()}>
-            Send
-          </button>
-        </form>
+        {isAdmin ? (
+          <p className="muted"></p>
+        ) : (
+          <form className="composer" onSubmit={submit}>
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Describe the audience or refine it, e.g. remove premium apparel, make it broader, approve this audience..."
+              rows={3}
+            />
+            <button className="button" disabled={sending || !input.trim()}>
+              Send
+            </button>
+          </form>
+        )}
       </section>
 
       <SignalPanel
@@ -192,6 +199,7 @@ export function ChatPage() {
         onEstimate={estimate}
         onRemoveSignal={removeSelectedSignal}
         approving={sending}
+        readOnly={isAdmin}
       />
     </div>
   );

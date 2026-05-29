@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MessageRole, Role } from "@prisma/client";
+import { ConversationStatus, MessageRole, Role } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getAuthUser, requireAuth } from "../middleware/auth.js";
 import {
@@ -21,9 +21,18 @@ function paramString(value: string | string[] | undefined): string {
 
 conversationRouter.use(requireAuth);
 
+function assertPlannerOnly(user: { role: Role }) {
+  if (user.role === Role.ADMIN) {
+    throw new HttpError(403, "Admins have read-only access to approved conversations");
+  }
+}
+
 async function assertConversationAccess(conversationId: string, user: { id: string; role: Role }) {
   const conversation = await prisma.conversation.findFirst({
-    where: user.role === Role.ADMIN ? { id: conversationId } : { id: conversationId, userId: user.id },
+    where:
+      user.role === Role.ADMIN
+        ? { id: conversationId, status: ConversationStatus.APPROVED }
+        : { id: conversationId, userId: user.id },
   });
 
   if (!conversation) {
@@ -49,7 +58,10 @@ conversationRouter.get(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const conversations = await prisma.conversation.findMany({
-      where: user.role === Role.ADMIN ? {} : { userId: user.id },
+      where:
+        user.role === Role.ADMIN
+          ? { status: ConversationStatus.APPROVED }
+          : { userId: user.id },
       include: {
         audiencePlan: true,
         user: { select: { id: true, email: true, name: true, role: true } },
@@ -66,6 +78,7 @@ conversationRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    assertPlannerOnly(user);
     const { title } = req.body as { title?: string };
 
     const conversation = await prisma.conversation.create({
@@ -94,6 +107,7 @@ conversationRouter.post(
   "/:id/messages",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    assertPlannerOnly(user);
     const conversationId = paramString(req.params.id);
     await assertConversationAccess(conversationId, user);
 
@@ -120,6 +134,7 @@ conversationRouter.post(
   "/:id/approve",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    assertPlannerOnly(user);
     const conversationId = paramString(req.params.id);
     await assertConversationAccess(conversationId, user);
     const estimate = await approveAudiencePlan(conversationId, true);
@@ -132,6 +147,7 @@ conversationRouter.post(
   "/:id/estimate",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    assertPlannerOnly(user);
     const conversationId = paramString(req.params.id);
     await assertConversationAccess(conversationId, user);
     const estimate = await approveAudiencePlan(conversationId, false);
@@ -144,6 +160,7 @@ conversationRouter.post(
   "/:id/signals/remove",
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    assertPlannerOnly(user);
     const conversationId = paramString(req.params.id);
     await assertConversationAccess(conversationId, user);
     const { signalId } = req.body as { signalId?: string };

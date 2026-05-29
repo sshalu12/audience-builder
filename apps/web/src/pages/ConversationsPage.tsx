@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createConversation, listConversations } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import type { Conversation } from "../types";
 
 function formatDate(value: string) {
@@ -13,6 +14,8 @@ function formatDate(value: string) {
 }
 
 export function ConversationsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,11 +48,13 @@ export function ConversationsPage() {
       <div className="page-header">
         <div>
           <p className="eyebrow">Workspace</p>
-          <h1>Conversations</h1>
+          <h1>{isAdmin ? "Approved Audiences" : "Conversations"}</h1>
         </div>
-        <button className="button" onClick={createNew}>
-          New Audience
-        </button>
+        {!isAdmin && (
+          <button className="button" onClick={createNew}>
+            New Audience
+          </button>
+        )}
       </div>
 
       {loading && <p>Loading conversations...</p>}
@@ -79,11 +84,17 @@ export function ConversationsPage() {
 
       {!loading && conversations.length === 0 && (
         <div className="empty-state">
-          <h2>No conversations yet</h2>
-          <p>Create your first audience and try: “fitness enthusiasts aged 25-44 with premium shopping habits”.</p>
-          <button className="button" onClick={createNew}>
-            Start Building
-          </button>
+          <h2>{isAdmin ? "No approved audiences yet" : "No conversations yet"}</h2>
+          <p>
+            {isAdmin
+              ? "Approved audiences from planners will appear here."
+              : "Create your first audience and try: “fitness enthusiasts aged 25-44 with premium shopping habits”."}
+          </p>
+          {!isAdmin && (
+            <button className="button" onClick={createNew}>
+              Start Building
+            </button>
+          )}
         </div>
       )}
     </div>
